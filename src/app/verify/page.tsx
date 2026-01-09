@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { Shield, Check, Monitor, Smartphone, QrCode } from 'lucide-react'
-import Navbar from '@/components/navbar'
+import Navbar from '../../components/navbar'
 
 export default function VerifyPage() {
   return (

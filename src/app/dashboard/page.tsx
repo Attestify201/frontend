@@ -9,7 +9,7 @@ import {
   Eye, 
   ArrowRight
 } from 'lucide-react'
-import Navbar from '@/components/navbar'
+import Navbar from '../../components/navbar'
 import Link from 'next/link'
 
 export default function DashboardPage() {

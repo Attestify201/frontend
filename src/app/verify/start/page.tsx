@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { Shield, Check, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import Navbar from '@/components/navbar'
+import Navbar from '../../../components/navbar'
 
 export default function VerifyStartPage() {
   return (

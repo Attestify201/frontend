@@ -11,7 +11,7 @@ import {
   DollarSign,
   Coins
 } from 'lucide-react'
-import Navbar from '@/components/navbar'
+import Navbar from '../../components/navbar'
 import Link from 'next/link'
 
 export default function DepositPage() {
