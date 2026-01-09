@@ -18,7 +18,7 @@
     "@tanstack/react-query": "latest",
     "framer-motion": "^12.23.25",
     "lucide-react": "^0.555.0",
-    "next": "latest",
+    "next": "16.0.10",
     "postcss": "^8.5.6",
     "react": "latest",
     "react-dom": "latest",
