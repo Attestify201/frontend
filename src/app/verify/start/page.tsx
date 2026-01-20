@@ -4,8 +4,22 @@ import { motion } from 'framer-motion'
 import { Shield, Check, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import Navbar from '../../../components/navbar'
+import sdk from '@farcaster/miniapp-sdk'
+import { useState, useEffect } from 'react'
 
 export default function VerifyStartPage() {
+  const [isSDKLoaded, setIsSDKLoaded] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      sdk.actions.ready();
+    };
+    if (sdk && !isSDKLoaded) {
+      setIsSDKLoaded(true);
+      load();
+    }
+  }, [isSDKLoaded]);
+  
   return (
     <div style={{ backgroundColor: '#141414', minHeight: '100vh' }}>
       <Navbar />

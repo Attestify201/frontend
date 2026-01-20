@@ -13,7 +13,7 @@ export async function GET() {
         iconUrl: `${appUrl}/liquifi_icon.png`,
         homeUrl: appUrl,
         imageUrl: `${appUrl}/liquifi_splashscreen.png`,
-        buttonTitle: "Launch Liquifi",
+        buttonTitle: "Launch LiquiFi",
         splashImageUrl: `${appUrl}/liquifi_splashscreen.png`,
         splashBackgroundColor: "#0E0E11",
       },
