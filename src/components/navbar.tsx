@@ -1,11 +1,10 @@
-import React from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { Sun } from 'lucide-react'
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { useConnection, useConnect, useDisconnect } from 'wagmi'
 
 const Navbar = () => {
-  const { isConnected, address } = useAccount()
+  const { isConnected, address } = useConnection()
   const { connect, connectors, status: connectStatus, error } = useConnect()
   const { disconnect } = useDisconnect()
 
