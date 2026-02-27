@@ -30,7 +30,7 @@
     "rxjs": "^7.8.1",
     "tailwindcss": "^4.1.17",
     "viem": "^2.46.2",
-    "wagmi": "^3.5.0"
+    "wagmi": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

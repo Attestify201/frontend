@@ -20,6 +20,8 @@ export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const { address } = useConnection()
 
+  console.log("addy", address)
+
   const GET_DEPOSITS = gql`
     query GetDeposits($user: Bytes!) {
       depositeds(where: { user: $user }) {
