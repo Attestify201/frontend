@@ -14,11 +14,11 @@ import Link from 'next/link'
 import sdk from '@farcaster/miniapp-sdk'
 import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
-import { useConnection } from 'wagmi'
+import { useAccount } from 'wagmi'
 
 export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
-  const { address } = useConnection()
+  const { address } = useAccount()
 
   console.log("addy", address)
 
