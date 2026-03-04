@@ -34,6 +34,16 @@ const ERC20_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  {
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    name: 'transfer',
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
 ] as const
 
 // Utility function to check if we're in a MiniApp environment
@@ -50,8 +60,10 @@ export default function WithdrawalPage() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
-  const [txStatus, setTxStatus] = useState<'idle' | 'withdrawing' | 'success' | 'error'>('idle')
+  const [txStatus, setTxStatus] = useState<'idle' | 'withdrawing' | 'transferring' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [recipientAddress, setRecipientAddress] = useState<string>('')
+  const [showRecipientInput, setShowRecipientInput] = useState(false)
 
   const { address, isConnected } = useAccount()
 
@@ -111,12 +123,28 @@ export default function WithdrawalPage() {
     reset: resetWithdraw
   } = useWriteContract()
 
+  const {
+    writeContract: transfer,
+    data: transferHash,
+    isPending: isTransferring,
+    error: transferError,
+    reset: resetTransfer
+  } = useWriteContract()
+
   const { 
     isLoading: isWaitingWithdraw,
     isSuccess: isWithdrawSuccess,
     error: withdrawTxError
   } = useWaitForTransactionReceipt({
     hash: withdrawHash,
+  })
+
+  const {
+    isLoading: isWaitingTransfer,
+    isSuccess: isTransferSuccess,
+    error: transferTxError
+  } = useWaitForTransactionReceipt({
+    hash: transferHash,
   })
 
   // GraphQL queries for withdrawal history
@@ -166,39 +194,43 @@ export default function WithdrawalPage() {
     }
   }, [isSDKLoaded]);
 
-  // Handle withdrawal success - auto-refresh all balances
+  // Handle withdrawal success - if recipient address is provided, transfer funds
   useEffect(() => {
-    if (isWithdrawSuccess) {
+    if (isWithdrawSuccess && recipientAddress && recipientAddress.trim() !== '' && withdrawalAmount > BigInt(0)) {
+      // Validate recipient address
+      if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress.trim())) {
+        setErrorMessage('Invalid recipient address. Please enter a valid Ethereum address.')
+        setTxStatus('error')
+        return
+      }
+
+      setTxStatus('transferring')
+      setErrorMessage('')
+
+      // Transfer the withdrawn amount to the recipient address
+      transfer({
+        address: CUSD_ADDRESS as Address,
+        abi: ERC20_ABI,
+        functionName: 'transfer',
+        args: [recipientAddress.trim() as Address, withdrawalAmount],
+      })
+    } else if (isWithdrawSuccess && (!recipientAddress || recipientAddress.trim() === '')) {
+      // No external transfer needed, just refresh balances
       setTxStatus('success')
       setAmount('')
       
-      // Function to refetch all data
       const refreshAllData = () => {
         refetchVaultBalance()
         refetchWalletBalance()
         refetchWithdrawals()
       }
       
-      // Immediate refetch
       refreshAllData()
       
-      // Wait for blockchain state to update, then refetch multiple times
-      const timer1 = setTimeout(() => {
-        refreshAllData()
-      }, 3000)
-      
-      const timer2 = setTimeout(() => {
-        refreshAllData()
-      }, 6000)
-      
-      const timer3 = setTimeout(() => {
-        refreshAllData()
-      }, 12000)
-      
-      // Reset success status after 3 seconds
-      const timer4 = setTimeout(() => {
-        setTxStatus('idle')
-      }, 3000)
+      const timer1 = setTimeout(() => refreshAllData(), 3000)
+      const timer2 = setTimeout(() => refreshAllData(), 6000)
+      const timer3 = setTimeout(() => refreshAllData(), 12000)
+      const timer4 = setTimeout(() => setTxStatus('idle'), 3000)
       
       return () => {
         clearTimeout(timer1)
@@ -207,7 +239,37 @@ export default function WithdrawalPage() {
         clearTimeout(timer4)
       }
     }
-  }, [isWithdrawSuccess, refetchVaultBalance, refetchWalletBalance, refetchWithdrawals])
+  }, [isWithdrawSuccess, recipientAddress, withdrawalAmount, transfer, refetchVaultBalance, refetchWalletBalance, refetchWithdrawals])
+
+  // Handle transfer success - refresh all balances
+  useEffect(() => {
+    if (isTransferSuccess) {
+      setTxStatus('success')
+      setAmount('')
+      setRecipientAddress('')
+      setShowRecipientInput(false)
+      
+      const refreshAllData = () => {
+        refetchVaultBalance()
+        refetchWalletBalance()
+        refetchWithdrawals()
+      }
+      
+      refreshAllData()
+      
+      const timer1 = setTimeout(() => refreshAllData(), 3000)
+      const timer2 = setTimeout(() => refreshAllData(), 6000)
+      const timer3 = setTimeout(() => refreshAllData(), 12000)
+      const timer4 = setTimeout(() => setTxStatus('idle'), 3000)
+      
+      return () => {
+        clearTimeout(timer1)
+        clearTimeout(timer2)
+        clearTimeout(timer3)
+        clearTimeout(timer4)
+      }
+    }
+  }, [isTransferSuccess, refetchVaultBalance, refetchWalletBalance, refetchWithdrawals])
 
   // Handle errors from writeContract hooks
   useEffect(() => {
@@ -228,6 +290,24 @@ export default function WithdrawalPage() {
     }
   }, [withdrawTxError])
 
+  useEffect(() => {
+    if (transferError) {
+      setTxStatus('error')
+      const errorMsg = transferError.message || 'Transfer failed. Please check your wallet.'
+      setErrorMessage(errorMsg)
+      setTimeout(() => {
+        resetTransfer()
+      }, 100)
+    }
+  }, [transferError, resetTransfer])
+
+  useEffect(() => {
+    if (transferTxError) {
+      setTxStatus('error')
+      setErrorMessage('Transfer transaction failed. Please try again.')
+    }
+  }, [transferTxError])
+
   // Reset status when transaction is rejected or cancelled
   useEffect(() => {
     if (txStatus === 'withdrawing' && !isWithdrawing && !isWaitingWithdraw && !withdrawHash && !withdrawError) {
@@ -239,14 +319,25 @@ export default function WithdrawalPage() {
       }, 2000)
       return () => clearTimeout(timer)
     }
-  }, [txStatus, isWithdrawing, isWaitingWithdraw, withdrawHash, withdrawError])
+    if (txStatus === 'transferring' && !isTransferring && !isWaitingTransfer && !transferHash && !transferError) {
+      const timer = setTimeout(() => {
+        if (!transferHash) {
+          setTxStatus('idle')
+          setErrorMessage('Transfer was cancelled or rejected. Please try again.')
+        }
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [txStatus, isWithdrawing, isWaitingWithdraw, withdrawHash, withdrawError, isTransferring, isWaitingTransfer, transferHash, transferError])
 
   // Update transaction status based on pending states
   useEffect(() => {
     if (isWithdrawing || isWaitingWithdraw) {
       setTxStatus('withdrawing')
+    } else if (isTransferring || isWaitingTransfer) {
+      setTxStatus('transferring')
     }
-  }, [isWithdrawing, isWaitingWithdraw])
+  }, [isWithdrawing, isWaitingWithdraw, isTransferring, isWaitingTransfer])
 
   // Calculate minimum assets out with slippage tolerance (1% slippage = 99% of requested)
   const minAssetsOut = useMemo(() => {
@@ -291,9 +382,9 @@ export default function WithdrawalPage() {
     })
   }
 
-  // Format balance for display (limit to 4 decimal places to prevent overflow)
+  // Format balance for display - show full precision (6+ decimal places to match dashboard)
   const formatBalance = (balance: bigint | undefined) => {
-    if (balance === undefined || balance === null) return '0.00'
+    if (balance === undefined || balance === null) return '0.000000'
     try {
       const formatted = formatUnits(balance, 18)
       const num = parseFloat(formatted)
@@ -301,23 +392,27 @@ export default function WithdrawalPage() {
       // For very large numbers, use fewer decimal places
       if (num >= 1000) {
         return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-      } else if (num >= 1) {
-        // For numbers >= 1, show up to 4 decimal places
-        return num.toFixed(4).replace(/\.?0+$/, '')
       } else {
-        // For numbers < 1, show up to 4 decimal places
-        return num.toFixed(4).replace(/\.?0+$/, '')
+        // For smaller numbers, show up to 6 decimal places (matching dashboard)
+        // Remove trailing zeros but keep at least 2 decimal places
+        const fixed = num.toFixed(6)
+        const trimmed = fixed.replace(/\.?0+$/, '')
+        // If no decimal part, add .00
+        return trimmed.includes('.') ? trimmed : `${trimmed}.00`
       }
     } catch {
-      return '0.00'
+      return '0.000000'
     }
   }
 
-  // Handle Max button click
+  // Handle Max button click - use full precision
   const handleMaxClick = () => {
     if (userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0)) {
-      const maxAmount = formatBalance(userVaultBalance)
-      setAmount(maxAmount)
+      // Use formatUnits directly to get full precision, then format for display
+      const fullAmount = formatUnits(userVaultBalance, 18)
+      // Remove trailing zeros but keep decimals
+      const trimmed = fullAmount.replace(/\.?0+$/, '')
+      setAmount(trimmed)
       setErrorMessage('')
     }
   }
@@ -341,7 +436,7 @@ export default function WithdrawalPage() {
 
   const availableBalance = userVaultBalance && typeof userVaultBalance === 'bigint' 
     ? formatBalance(userVaultBalance) 
-    : '0.00'
+    : '0.000000'
 
   return (
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
@@ -423,7 +518,11 @@ export default function WithdrawalPage() {
               {txStatus === 'success' && (
                 <div className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
-                  <p className="text-green-400 text-sm">Withdrawal successful! Your funds have been transferred to your wallet.</p>
+                  <p className="text-green-400 text-sm">
+                    {recipientAddress && recipientAddress.trim() !== ''
+                      ? `Withdrawal successful! Funds have been transferred to ${recipientAddress.trim().slice(0, 6)}...${recipientAddress.trim().slice(-4)}.`
+                      : 'Withdrawal successful! Your funds have been transferred to your Farcaster wallet.'}
+                  </p>
                 </div>
               )}
 
@@ -433,7 +532,7 @@ export default function WithdrawalPage() {
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                    disabled={!isConnected || txStatus === 'withdrawing'}
+                    disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
                     className="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="flex items-center gap-2">
@@ -503,13 +602,13 @@ export default function WithdrawalPage() {
                     }}
                     placeholder={currency === 'cusd' ? 'Enter amount in cUSD' : 'Enter amount in NGN'}
                     className="w-full pl-10 pr-20 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!isConnected || txStatus === 'withdrawing'}
+                    disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
                   />
                   {isConnected && currency === 'cusd' && userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0) && (
                     <button
                       type="button"
                       onClick={handleMaxClick}
-                      disabled={txStatus === 'withdrawing'}
+                      disabled={txStatus === 'withdrawing' || txStatus === 'transferring'}
                       className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-semibold bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-md hover:bg-[#2BA3FF]/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Max
@@ -534,6 +633,59 @@ export default function WithdrawalPage() {
                 </p>
               </div>
 
+              {/* Optional: Withdraw to External Address */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-white/70 text-sm">Withdraw to (optional)</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRecipientInput(!showRecipientInput)
+                      if (!showRecipientInput) {
+                        setRecipientAddress('')
+                      }
+                    }}
+                    disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
+                    className="text-[#2BA3FF] text-xs hover:text-[#1a8fdb] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {showRecipientInput ? 'Use Farcaster wallet' : 'Different address?'}
+                  </button>
+                </div>
+                {showRecipientInput ? (
+                  <div>
+                    <label className="block text-white/70 text-sm mb-2">Recipient Address</label>
+                    <input
+                      type="text"
+                      value={recipientAddress}
+                      onChange={(e) => {
+                        setRecipientAddress(e.target.value.trim())
+                        setErrorMessage('')
+                      }}
+                      placeholder="0x..."
+                      disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
+                      className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-mono text-sm"
+                    />
+                    {recipientAddress && !/^0x[a-fA-F0-9]{40}$/.test(recipientAddress) && (
+                      <p className="text-red-400 text-xs mt-1">Invalid Ethereum address format</p>
+                    )}
+                    <p className="text-white/50 text-xs mt-2">
+                      Funds will be withdrawn to your Farcaster wallet first, then automatically transferred to this address.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 bg-white/5 border border-white/10 rounded-lg">
+                    <p className="text-white/70 text-sm">
+                      <span className="text-white font-medium">Farcaster Wallet</span>
+                      {address && (
+                        <span className="text-white/50 text-xs ml-2 font-mono">
+                          ({address.slice(0, 6)}...{address.slice(-4)})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Withdrawal Details */}
               <div className="mb-6 space-y-3">
                 <div className="flex items-center gap-2">
@@ -553,20 +705,27 @@ export default function WithdrawalPage() {
               {/* Withdraw Button */}
               <button
                 onClick={handleWithdraw}
-                disabled={
+                disabled={Boolean(
                   !isConnected ||
                   txStatus === 'withdrawing' ||
-                  !amount ||
+                  txStatus === 'transferring' ||
+                  !amount || (amount && amount.trim() === '') ||
                   withdrawalAmount === BigInt(0) ||
                   !hasSufficientBalance ||
-                  currency !== 'cusd'
-                }
+                  currency !== 'cusd' ||
+                  (showRecipientInput && recipientAddress && recipientAddress.trim() !== '' && !/^0x[a-fA-F0-9]{40}$/.test(recipientAddress))
+                )}
                 className="w-full py-3 bg-[#2BA3FF] text-white rounded-lg font-semibold hover:bg-[#1a8fdb] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {txStatus === 'withdrawing' ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Processing Withdrawal...</span>
+                  </>
+                ) : txStatus === 'transferring' ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Transferring to External Wallet...</span>
                   </>
                 ) : txStatus === 'success' ? (
                   <>

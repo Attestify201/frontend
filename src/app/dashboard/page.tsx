@@ -14,15 +14,31 @@ import Link from 'next/link'
 import sdk from '@farcaster/miniapp-sdk'
 import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
-import { useAccount, useReadContract } from 'wagmi'
+import { useAccount, useReadContract, useEnsName } from 'wagmi'
 import { formatUnits, type Address } from 'viem'
 import { AttestifyVaultContract, StrategyContract, CUSD_ADDRESS } from '../abi'
 
 export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
+  const [balanceVisible, setBalanceVisible] = useState(true)
   // Get connected wallet address from Farcaster
   // Note: Farcaster connector provides the Farcaster wallet address
   const { address, isConnected } = useAccount()
+  
+  // Get ENS name for the connected address
+  const { data: ensName } = useEnsName({
+    address: address,
+    query: {
+      enabled: !!address && isConnected,
+    },
+  })
+  
+  // Format display name: ENS name if available, otherwise shortened address
+  const displayName = useMemo(() => {
+    if (!address) return 'Guest'
+    if (ensName) return ensName
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }, [address, ensName])
 
   // ERC20 ABI for reading wallet balance
   const ERC20_ABI = [
@@ -318,7 +334,9 @@ export default function DashboardPage() {
           {/* Dashboard Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">Hi Docky</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">
+                {isConnected ? `Hi ${displayName}` : 'Hi Guest'}
+              </h2>
               <p className="text-white/60 text-sm sm:text-base">Start earning</p>
               {!isConnected && (
                 <p className="text-yellow-400 text-xs mt-1">⚠️ Wallet not connected</p>
@@ -350,37 +368,51 @@ export default function DashboardPage() {
             <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-white/70 text-sm font-medium">Vault Balance</h3>
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-white/50" />
+                <div className="flex items-center gap-5">
+                  <button
+                    onClick={() => setBalanceVisible(!balanceVisible)}
+                    className="p-1 hover:bg-white/5 rounded transition-colors"
+                    aria-label={balanceVisible ? 'Hide balance' : 'Show balance'}
+                  >
+                    <Eye className={`w-4 h-4 ${balanceVisible ? 'text-white/50' : 'text-white/30'}`} />
+                  </button>
                   <ArrowRight className="w-4 h-4 text-white/50" />
                 </div>
               </div>
               <p className="text-3xl font-bold text-white mb-2">
-                {isLoadingBalance
-                  ? 'Loading...'
-                  : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
-                  ? `$${parseFloat(formatUnits(userVaultBalance, 18)).toFixed(2)}`
-                  : isConnected
-                  ? '$0.00'
-                  : '$0.00'}
+                {balanceVisible ? (
+                  isLoadingBalance
+                    ? 'Loading...'
+                    : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
+                    ? `$${parseFloat(formatUnits(userVaultBalance, 18)).toFixed(2)}`
+                    : isConnected
+                    ? '$0.00'
+                    : '$0.00'
+                ) : (
+                  '••••••'
+                )}
               </p>
-              <p className="text-green-400 text-sm">
-                {isLoadingBalance
-                  ? 'Calculating...'
-                  : dailyEarnings !== null
-                  ? `+${dailyEarnings.toFixed(6)} cUSD/day`
-                  : isConnected
-                  ? '$0.00/day'
-                  : 'Connect wallet to see earnings'}
-              </p>
-              {isConnected && (
-                <p className="text-white/50 text-xs mt-2">
-                  Wallet: {isLoadingWalletBalance 
-                    ? 'Loading...' 
-                    : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
-                    ? `${formatUnits(walletBalance, 18)} cUSD`
-                    : '0.00 cUSD'}
-                </p>
+              {balanceVisible && (
+                <>
+                  <p className="text-green-400 text-sm">
+                    {isLoadingBalance
+                      ? 'Calculating...'
+                      : dailyEarnings !== null
+                      ? `+${dailyEarnings.toFixed(6)} cUSD/day`
+                      : isConnected
+                      ? '$0.00/day'
+                      : 'Connect wallet to see earnings'}
+                  </p>
+                  {isConnected && (
+                    <p className="text-white/50 text-xs mt-2">
+                      Wallet: {isLoadingWalletBalance 
+                        ? 'Loading...' 
+                        : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
+                        ? `${formatUnits(walletBalance, 18)} cUSD`
+                        : '0.00 cUSD'}
+                    </p>
+                  )}
+                </>
               )}
             </div>
 
@@ -411,26 +443,32 @@ export default function DashboardPage() {
             <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
               <h3 className="text-white/70 text-sm font-medium mb-4">Total Earnings</h3>
               <p className="text-3xl font-bold text-white mb-2">
-                {isLoadingBalance || isLoadingTotalAssets
-                  ? 'Loading...'
-                  : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
-                  ? (() => {
-                      const userBalance = Number(formatUnits(userVaultBalance, 18))
-                      return userBalance > 0 ? userBalance.toFixed(6) : '0.000000'
-                    })()
-                  : isConnected
-                  ? '0.000000'
-                  : '0.000000'}
+                {balanceVisible ? (
+                  isLoadingBalance || isLoadingTotalAssets
+                    ? 'Loading...'
+                    : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
+                    ? (() => {
+                        const userBalance = Number(formatUnits(userVaultBalance, 18))
+                        return userBalance > 0 ? userBalance.toFixed(6) : '0.000000'
+                      })()
+                    : isConnected
+                    ? '0.000000'
+                    : '0.000000'
+                ) : (
+                  '••••••'
+                )}
               </p>
-              <p className="text-green-400 text-sm">
-                {isLoadingAPY
-                  ? 'Calculating...'
-                  : apyPercent !== null
-                  ? `Current APY: ${apyPercent.toFixed(2)}%`
-                  : isConnected
-                  ? 'APY: 0.00%'
-                  : 'Connect wallet'}
-              </p>
+              {balanceVisible && (
+                <p className="text-green-400 text-sm">
+                  {isLoadingAPY
+                    ? 'Calculating...'
+                    : apyPercent !== null
+                    ? `Current APY: ${apyPercent.toFixed(2)}%`
+                    : isConnected
+                    ? 'APY: 0.00%'
+                    : 'Connect wallet'}
+                </p>
+              )}
             </div>
           </div>
 
