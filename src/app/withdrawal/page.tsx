@@ -16,7 +16,6 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
-import FeedbackModal from '../../components/FeedbackModal'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { sdk } from '@farcaster/miniapp-sdk'
@@ -65,8 +64,6 @@ export default function WithdrawalPage() {
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [recipientAddress, setRecipientAddress] = useState<string>('')
   const [showRecipientInput, setShowRecipientInput] = useState(false)
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
-  const [feedbackTxHash, setFeedbackTxHash] = useState<string | null>(null)
 
   const { address, isConnected } = useAccount()
 
@@ -197,36 +194,9 @@ export default function WithdrawalPage() {
     }
   }, [isSDKLoaded]);
 
-  // Submit feedback to AI agent after successful transaction
-  const submitFeedback = async (txHash: string, rating?: number, comment?: string) => {
-    try {
-      const res = await fetch('/api/agent/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tx_hash: txHash,
-          success: true,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        console.warn('Feedback submission failed:', data)
-        throw new Error(data.error || 'Feedback submission failed')
-      }
-      return data
-    } catch (error) {
-      console.warn('Feedback submission error:', error)
-      throw error
-    }
-  }
-
   // Handle withdrawal success - if recipient address is provided, transfer funds
   useEffect(() => {
     if (isWithdrawSuccess && withdrawHash) {
-      // Show feedback modal for withdrawal transaction
-      setFeedbackTxHash(withdrawHash)
-      setShowFeedbackModal(true)
-      
       if (recipientAddress && recipientAddress.trim() !== '' && withdrawalAmount > BigInt(0)) {
         // Validate recipient address
         if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress.trim())) {
@@ -777,22 +747,6 @@ export default function WithdrawalPage() {
         </main>
       </div>
 
-      {/* Feedback Modal */}
-      {feedbackTxHash && (
-        <FeedbackModal
-          isOpen={showFeedbackModal}
-          onClose={() => {
-            setShowFeedbackModal(false)
-            setFeedbackTxHash(null)
-            setTxStatus('idle')
-          }}
-          txHash={feedbackTxHash}
-          transactionType="withdraw"
-          onSubmit={async (rating, comment) => {
-            await submitFeedback(feedbackTxHash, rating, comment)
-          }}
-        />
-      )}
     </div>
   )
 }

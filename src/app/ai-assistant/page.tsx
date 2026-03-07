@@ -244,24 +244,6 @@ export default function AIAssistantPage() {
       prev ? { ...prev, status: 'success', txHash } : null
     )
 
-    // Submit feedback to backend
-    try {
-      const startTime = transactionStatus.status === 'pending' ? Date.now() : undefined
-      const responseTimeMs = startTime ? Date.now() - startTime : undefined
-
-      await fetch('/api/agent/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tx_hash: txHash,
-          success: true,
-          ...(responseTimeMs && { response_time_ms: responseTimeMs }),
-        }),
-      })
-    } catch (error) {
-      // Feedback submission failed, but transaction succeeded
-    }
-
     // Add success message to chat
     setMessages((prev) => [
       ...prev,
@@ -277,41 +259,6 @@ export default function AIAssistantPage() {
     setTimeout(() => {
       setTransactionStatus(null)
     }, 5000)
-  }
-
-  // Extract transaction hash from text (0x followed by 64 hex characters)
-  const extractTxHash = (text: string): string | null => {
-    const txHashRegex = /0x[a-fA-F0-9]{64}/i
-    const match = text.match(txHashRegex)
-    return match ? match[0] : null
-  }
-
-  // Check if message is about feedback
-  const isFeedbackRequest = (text: string): boolean => {
-    const feedbackKeywords = ['feedback', 'rate', 'rating', 'review', 'how was', 'how did', 'submit feedback', 'give feedback']
-    const lowerText = text.toLowerCase()
-    return feedbackKeywords.some(keyword => lowerText.includes(keyword))
-  }
-
-  // Submit feedback for a transaction hash
-  const submitFeedbackForTx = async (txHash: string): Promise<{ success: boolean; message: string }> => {
-    try {
-      const res = await fetch('/api/agent/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tx_hash: txHash,
-          success: true,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        return { success: false, message: data.error || 'Failed to submit feedback' }
-      }
-      return { success: true, message: 'Feedback submitted successfully!' }
-    } catch (error) {
-      return { success: false, message: 'Failed to submit feedback. Please try again.' }
-    }
   }
 
   const handleSendMessage = async () => {
@@ -340,57 +287,7 @@ export default function AIAssistantPage() {
     setInput('')
     setIsLoading(true)
 
-    // Check if user wants to give feedback for a transaction
-    const txHash = extractTxHash(messageContent)
-    
-    // Also check recent messages for transaction hashes
-    const recentTxHash = messages
-      .slice(-5) // Check last 5 messages
-      .map(m => m.txHash)
-      .find(hash => hash && hash.startsWith('0x')) || null
-
-    // Check if user is confirming feedback submission
-    const isConfirmingFeedback = /^(yes|yeah|yep|sure|ok|okay|submit|submit feedback|do it)$/i.test(messageContent.trim())
-
-    // If user confirms feedback and we have a tx hash (either in current message or recent)
-    if (isConfirmingFeedback && (txHash || recentTxHash)) {
-      const hashToUse = txHash || recentTxHash!
-      const feedbackResult = await submitFeedbackForTx(hashToUse)
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: feedbackResult.success
-            ? `✅ ${feedbackResult.message} Thank you for your feedback! Your transaction ${hashToUse.slice(0, 10)}...${hashToUse.slice(-8)} has been rated.`
-            : `❌ ${feedbackResult.message}`,
-          timestamp: new Date(),
-        },
-      ])
-      setIsLoading(false)
-      return
-    }
-
-    // If user provided a transaction hash and wants to give feedback
-    if (txHash && isFeedbackRequest(messageContent)) {
-      const feedbackResult = await submitFeedbackForTx(txHash)
-      
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: feedbackResult.success
-            ? `✅ ${feedbackResult.message} Thank you for your feedback! Your transaction ${txHash.slice(0, 10)}...${txHash.slice(-8)} has been rated.`
-            : `❌ ${feedbackResult.message}`,
-          timestamp: new Date(),
-        },
-      ])
-      setIsLoading(false)
-      return
-    }
-
-    // If there's a tx hash but no explicit feedback request, still check with AI
-    // The AI can handle it naturally in conversation
+    // Send message to AI agent
     try {
       const response = await fetch('/api/agent/chat', {
         method: 'POST',
@@ -408,13 +305,7 @@ export default function AIAssistantPage() {
       }
 
       const data = await response.json()
-      let assistantContent = data.reply || 'I couldn\'t generate a response. Please try again.'
-      
-      // If AI mentions feedback and we have a tx hash in the conversation, offer to submit
-      if (txHash && (assistantContent.toLowerCase().includes('feedback') || assistantContent.toLowerCase().includes('rate'))) {
-        // AI is talking about feedback, we can offer to submit it
-        assistantContent += `\n\nWould you like me to submit feedback for transaction ${txHash.slice(0, 10)}...${txHash.slice(-8)}? Just say "yes" or "submit feedback".`
-      }
+      const assistantContent = data.reply || 'I couldn\'t generate a response. Please try again.'
 
       const assistantMessage: Message = {
         role: 'assistant',

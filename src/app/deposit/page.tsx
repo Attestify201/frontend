@@ -16,7 +16,6 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
-import FeedbackModal from '../../components/FeedbackModal'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { sdk } from '@farcaster/miniapp-sdk'
@@ -79,8 +78,6 @@ export default function DepositPage() {
   const [balanceHidden, setBalanceHidden] = useState(false)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [txStatus, setTxStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
-  const [feedbackTxHash, setFeedbackTxHash] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
 
   const { address, isConnected } = useAccount()
@@ -372,36 +369,11 @@ export default function DepositPage() {
     }
   }, [isApprovalSuccess, refetchAllowance])
 
-  // Submit feedback to AI agent after successful transaction
-  const submitFeedback = async (txHash: string, rating?: number, comment?: string) => {
-    try {
-      const res = await fetch('/api/agent/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tx_hash: txHash,
-          success: true,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        console.warn('Feedback submission failed:', data)
-        throw new Error(data.error || 'Feedback submission failed')
-      }
-      return data
-    } catch (error) {
-      console.warn('Feedback submission error:', error)
-      throw error
-    }
-  }
-
-  // Handle deposit success - auto-refresh all balances and show feedback modal
+  // Handle deposit success - auto-refresh all balances
   useEffect(() => {
     if (isDepositSuccess && depositHash) {
       setTxStatus('success')
       setAmount('')
-      setFeedbackTxHash(depositHash)
-      setShowFeedbackModal(true)
       
       // Function to refetch all data
       const refreshAllData = () => {
@@ -1003,22 +975,6 @@ export default function DepositPage() {
         </main>
       </div>
 
-      {/* Feedback Modal */}
-      {feedbackTxHash && (
-        <FeedbackModal
-          isOpen={showFeedbackModal}
-          onClose={() => {
-            setShowFeedbackModal(false)
-            setFeedbackTxHash(null)
-            setTxStatus('idle')
-          }}
-          txHash={feedbackTxHash}
-          transactionType="deposit"
-          onSubmit={async (rating, comment) => {
-            await submitFeedback(feedbackTxHash, rating, comment)
-          }}
-        />
-      )}
     </div>
   )
 }
