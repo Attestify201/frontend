@@ -16,6 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
+import FeedbackModal from '../../components/FeedbackModal'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { sdk } from '@farcaster/miniapp-sdk'
@@ -78,6 +79,8 @@ export default function DepositPage() {
   const [balanceHidden, setBalanceHidden] = useState(false)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [txStatus, setTxStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [feedbackTxHash, setFeedbackTxHash] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
 
   const { address, isConnected } = useAccount()
@@ -369,11 +372,36 @@ export default function DepositPage() {
     }
   }, [isApprovalSuccess, refetchAllowance])
 
-  // Handle deposit success - auto-refresh all balances
+  // Submit feedback to AI agent after successful transaction
+  const submitFeedback = async (txHash: string, rating?: number, comment?: string) => {
+    try {
+      const res = await fetch('/api/agent/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tx_hash: txHash,
+          success: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        console.warn('Feedback submission failed:', data)
+        throw new Error(data.error || 'Feedback submission failed')
+      }
+      return data
+    } catch (error) {
+      console.warn('Feedback submission error:', error)
+      throw error
+    }
+  }
+
+  // Handle deposit success - auto-refresh all balances and show feedback modal
   useEffect(() => {
-    if (isDepositSuccess) {
+    if (isDepositSuccess && depositHash) {
       setTxStatus('success')
       setAmount('')
+      setFeedbackTxHash(depositHash)
+      setShowFeedbackModal(true)
       
       // Function to refetch all data
       const refreshAllData = () => {
@@ -405,19 +433,13 @@ export default function DepositPage() {
         refreshAllData()
       }, 12000)
       
-      // Reset success status after 3 seconds
-      const timer4 = setTimeout(() => {
-        setTxStatus('idle')
-      }, 3000)
-      
       return () => {
         clearTimeout(timer1)
         clearTimeout(timer2)
         clearTimeout(timer3)
-        clearTimeout(timer4)
       }
     }
-  }, [isDepositSuccess, refetchBalance, refetchShares, refetchVaultBalance, refetchAllowance, refetchTotalAssets, refetchDeposits, refetchWithdrawals])
+  }, [isDepositSuccess, depositHash, refetchBalance, refetchShares, refetchVaultBalance, refetchAllowance, refetchTotalAssets, refetchDeposits, refetchWithdrawals])
 
   // Handle errors from writeContract hooks
   useEffect(() => {
@@ -897,80 +919,80 @@ export default function DepositPage() {
                           )}
                         </div>
                       ) : (
-                        <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" className="w-full">
-                          {/* Y-axis labels on the left - hidden when balance is hidden */}
+                      <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" className="w-full">
+                        {/* Y-axis labels on the left - hidden when balance is hidden */}
                           {!balanceHidden && balanceHistory.length > 1 && balanceHistory.map((item, index) => {
-                            const y = padding + (index / (balanceHistory.length - 1)) * chartInnerHeight
-                            return (
-                              <text
-                                key={`y-axis-${index}`}
-                                x={10}
-                                y={y + 4}
-                                textAnchor="start"
-                                className="text-xs fill-white/70"
-                                fontSize="12"
-                              >
+                          const y = padding + (index / (balanceHistory.length - 1)) * chartInnerHeight
+                          return (
+                            <text
+                              key={`y-axis-${index}`}
+                              x={10}
+                              y={y + 4}
+                              textAnchor="start"
+                              className="text-xs fill-white/70"
+                              fontSize="12"
+                            >
                                 ${item.value.toFixed(2)}
-                              </text>
-                            )
-                          })}
-                          
-                          {/* Area fill */}
+                            </text>
+                          )
+                        })}
+                        
+                        {/* Area fill */}
                           {areaPath && (
-                            <path
-                              d={areaPath}
-                              fill="url(#balanceGradient)"
-                              opacity={0.3}
-                            />
+                        <path
+                          d={areaPath}
+                          fill="url(#balanceGradient)"
+                          opacity={0.3}
+                        />
                           )}
-                          {/* Line */}
+                        {/* Line */}
                           {linePath && (
-                            <path
-                              d={linePath}
-                              fill="none"
-                              stroke="#2BA3FF"
-                              strokeWidth="2.5"
-                            />
+                        <path
+                          d={linePath}
+                          fill="none"
+                          stroke="#2BA3FF"
+                          strokeWidth="2.5"
+                        />
                           )}
-                          {/* Data points */}
-                          {points.map((point, index) => (
-                            <circle
-                              key={index}
-                              cx={point.x}
-                              cy={point.y}
-                              r="4"
-                              fill="#2BA3FF"
-                              stroke="#0E0E11"
-                              strokeWidth="1.5"
-                            />
-                          ))}
-                          {/* Gradient definition */}
-                          <defs>
-                            <linearGradient id="balanceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#2BA3FF" stopOpacity={0.5} />
-                              <stop offset="100%" stopColor="#2BA3FF" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          {/* X-axis labels - at the bottom */}
-                          {balanceHistory.map((item, index) => {
+                        {/* Data points */}
+                        {points.map((point, index) => (
+                          <circle
+                            key={index}
+                            cx={point.x}
+                            cy={point.y}
+                            r="4"
+                            fill="#2BA3FF"
+                            stroke="#0E0E11"
+                            strokeWidth="1.5"
+                          />
+                        ))}
+                        {/* Gradient definition */}
+                        <defs>
+                          <linearGradient id="balanceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor="#2BA3FF" stopOpacity={0.5} />
+                            <stop offset="100%" stopColor="#2BA3FF" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        {/* X-axis labels - at the bottom */}
+                        {balanceHistory.map((item, index) => {
                             const x = balanceHistory.length > 1
                               ? padding + (index / (balanceHistory.length - 1)) * chartInnerWidth
                               : padding + chartInnerWidth / 2
-                            return (
-                              <text
-                                key={index}
-                                x={x}
-                                y={chartHeight - 10}
-                                textAnchor="middle"
-                                className="text-xs fill-white/70"
-                                fontSize="13"
-                                fontWeight="500"
-                              >
-                                {item.label}
-                              </text>
-                            )
-                          })}
-                        </svg>
+                          return (
+                            <text
+                              key={index}
+                              x={x}
+                              y={chartHeight - 10}
+                              textAnchor="middle"
+                              className="text-xs fill-white/70"
+                              fontSize="13"
+                              fontWeight="500"
+                            >
+                              {item.label}
+                            </text>
+                          )
+                        })}
+                      </svg>
                       )}
                     </div>
                   </div>
@@ -980,6 +1002,23 @@ export default function DepositPage() {
           </div>
         </main>
       </div>
+
+      {/* Feedback Modal */}
+      {feedbackTxHash && (
+        <FeedbackModal
+          isOpen={showFeedbackModal}
+          onClose={() => {
+            setShowFeedbackModal(false)
+            setFeedbackTxHash(null)
+            setTxStatus('idle')
+          }}
+          txHash={feedbackTxHash}
+          transactionType="deposit"
+          onSubmit={async (rating, comment) => {
+            await submitFeedback(feedbackTxHash, rating, comment)
+          }}
+        />
+      )}
     </div>
   )
 }

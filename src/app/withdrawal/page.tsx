@@ -16,6 +16,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
+import FeedbackModal from '../../components/FeedbackModal'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { sdk } from '@farcaster/miniapp-sdk'
@@ -64,6 +65,8 @@ export default function WithdrawalPage() {
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [recipientAddress, setRecipientAddress] = useState<string>('')
   const [showRecipientInput, setShowRecipientInput] = useState(false)
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [feedbackTxHash, setFeedbackTxHash] = useState<string | null>(null)
 
   const { address, isConnected } = useAccount()
 
@@ -194,52 +197,79 @@ export default function WithdrawalPage() {
     }
   }, [isSDKLoaded]);
 
+  // Submit feedback to AI agent after successful transaction
+  const submitFeedback = async (txHash: string, rating?: number, comment?: string) => {
+    try {
+      const res = await fetch('/api/agent/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tx_hash: txHash,
+          success: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        console.warn('Feedback submission failed:', data)
+        throw new Error(data.error || 'Feedback submission failed')
+      }
+      return data
+    } catch (error) {
+      console.warn('Feedback submission error:', error)
+      throw error
+    }
+  }
+
   // Handle withdrawal success - if recipient address is provided, transfer funds
   useEffect(() => {
-    if (isWithdrawSuccess && recipientAddress && recipientAddress.trim() !== '' && withdrawalAmount > BigInt(0)) {
-      // Validate recipient address
-      if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress.trim())) {
-        setErrorMessage('Invalid recipient address. Please enter a valid Ethereum address.')
-        setTxStatus('error')
-        return
-      }
+    if (isWithdrawSuccess && withdrawHash) {
+      // Show feedback modal for withdrawal transaction
+      setFeedbackTxHash(withdrawHash)
+      setShowFeedbackModal(true)
+      
+      if (recipientAddress && recipientAddress.trim() !== '' && withdrawalAmount > BigInt(0)) {
+        // Validate recipient address
+        if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress.trim())) {
+          setErrorMessage('Invalid recipient address. Please enter a valid Ethereum address.')
+          setTxStatus('error')
+          return
+        }
 
-      setTxStatus('transferring')
-      setErrorMessage('')
+        setTxStatus('transferring')
+        setErrorMessage('')
 
-      // Transfer the withdrawn amount to the recipient address
-      transfer({
-        address: CUSD_ADDRESS as Address,
-        abi: ERC20_ABI,
-        functionName: 'transfer',
-        args: [recipientAddress.trim() as Address, withdrawalAmount],
-      })
-    } else if (isWithdrawSuccess && (!recipientAddress || recipientAddress.trim() === '')) {
-      // No external transfer needed, just refresh balances
-      setTxStatus('success')
-      setAmount('')
-      
-      const refreshAllData = () => {
-        refetchVaultBalance()
-        refetchWalletBalance()
-        refetchWithdrawals()
-      }
-      
-      refreshAllData()
-      
-      const timer1 = setTimeout(() => refreshAllData(), 3000)
-      const timer2 = setTimeout(() => refreshAllData(), 6000)
-      const timer3 = setTimeout(() => refreshAllData(), 12000)
-      const timer4 = setTimeout(() => setTxStatus('idle'), 3000)
-      
-      return () => {
-        clearTimeout(timer1)
-        clearTimeout(timer2)
-        clearTimeout(timer3)
-        clearTimeout(timer4)
+        // Transfer the withdrawn amount to the recipient address
+        transfer({
+          address: CUSD_ADDRESS as Address,
+          abi: ERC20_ABI,
+          functionName: 'transfer',
+          args: [recipientAddress.trim() as Address, withdrawalAmount],
+        })
+      } else if (!recipientAddress || recipientAddress.trim() === '') {
+        // No external transfer needed, just refresh balances
+        setTxStatus('success')
+        setAmount('')
+        
+        const refreshAllData = () => {
+          refetchVaultBalance()
+          refetchWalletBalance()
+          refetchWithdrawals()
+        }
+        
+        refreshAllData()
+        
+        const timer1 = setTimeout(() => refreshAllData(), 3000)
+        const timer2 = setTimeout(() => refreshAllData(), 6000)
+        const timer3 = setTimeout(() => refreshAllData(), 12000)
+        
+        return () => {
+          clearTimeout(timer1)
+          clearTimeout(timer2)
+          clearTimeout(timer3)
+        }
       }
     }
-  }, [isWithdrawSuccess, recipientAddress, withdrawalAmount, transfer, refetchVaultBalance, refetchWalletBalance, refetchWithdrawals])
+  }, [isWithdrawSuccess, withdrawHash, recipientAddress, withdrawalAmount, transfer, refetchVaultBalance, refetchWalletBalance, refetchWithdrawals])
 
   // Handle transfer success - refresh all balances
   useEffect(() => {
@@ -746,6 +776,23 @@ export default function WithdrawalPage() {
           </div>
         </main>
       </div>
+
+      {/* Feedback Modal */}
+      {feedbackTxHash && (
+        <FeedbackModal
+          isOpen={showFeedbackModal}
+          onClose={() => {
+            setShowFeedbackModal(false)
+            setFeedbackTxHash(null)
+            setTxStatus('idle')
+          }}
+          txHash={feedbackTxHash}
+          transactionType="withdraw"
+          onSubmit={async (rating, comment) => {
+            await submitFeedback(feedbackTxHash, rating, comment)
+          }}
+        />
+      )}
     </div>
   )
 }

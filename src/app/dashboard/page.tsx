@@ -349,6 +349,11 @@ export default function DashboardPage() {
                   <span className="text-white text-xs font-semibold">D</span>
                 </div>
               </div>
+              <Link href="/ai-assistant" className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-[#2BA3FF]/20 border border-[#2BA3FF]/50 text-[#2BA3FF] rounded-lg font-semibold hover:bg-[#2BA3FF]/30 hover:border-[#2BA3FF] transition-colors flex items-center gap-2">
+                <Brain className="w-4 h-4" />
+                <span className="hidden sm:inline">AI Assistant</span>
+                <span className="sm:hidden">AI</span>
+              </Link>
               <Link href="/deposit" className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-[#2BA3FF] text-white rounded-lg font-semibold hover:bg-[#1a8fdb] transition-colors">
                 Deposit
               </Link>
@@ -360,6 +365,22 @@ export default function DashboardPage() {
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-xs text-white">12</span>
               </div>
             </div>
+          </div>
+
+          {/* AI Assistant Promo Card - Mobile/Tablet */}
+          <div className="lg:hidden mb-6">
+            <Link href="/ai-assistant" className="block bg-[#2BA3FF]/10 border border-[#2BA3FF]/30 rounded-2xl p-6 hover:bg-[#2BA3FF]/15 hover:border-[#2BA3FF]/50 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-[#2BA3FF] flex items-center justify-center flex-shrink-0">
+                  <Brain className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-semibold text-lg mb-1">AI Yield Advisor</h3>
+                  <p className="text-white/70 text-sm">Get personalized help with deposits, withdrawals, and strategy</p>
+                </div>
+                <ArrowRight className="w-5 h-5 text-white/70" />
+              </div>
+            </Link>
           </div>
 
           {/* Cards Grid */}
