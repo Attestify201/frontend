@@ -7,22 +7,51 @@ import {
   Settings, 
   Bell, 
   Eye, 
-  ArrowRight
+  ArrowRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Menu,
+  X,
+  Loader2
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
 import Link from 'next/link'
 import sdk from '@farcaster/miniapp-sdk'
 import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
-import { useAccount, useReadContract } from 'wagmi'
+import { useAccount, useReadContract, useEnsName } from 'wagmi'
 import { formatUnits, type Address } from 'viem'
 import { AttestifyVaultContract, StrategyContract, CUSD_ADDRESS } from '../abi'
+import YieldAnimation from '../../components/yield-animation'
 
 export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
+  const [balanceVisible, setBalanceVisible] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; label: string; date: Date } | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   // Get connected wallet address from Farcaster
   // Note: Farcaster connector provides the Farcaster wallet address
   const { address, isConnected } = useAccount()
+  
+  // Get ENS name for the connected address
+  const { data: ensName } = useEnsName({
+    address: address,
+    query: {
+      enabled: !!address && isConnected,
+    },
+  })
+  
+  // Format display name: ENS name if available, otherwise shortened address
+  const displayName = useMemo(() => {
+    if (!address) return 'Guest'
+    if (ensName) return ensName
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+  }, [address, ensName])
 
   // ERC20 ABI for reading wallet balance
   const ERC20_ABI = [
@@ -290,26 +319,62 @@ export default function DashboardPage() {
 
     return history.slice(-7) // Last 7 points
   }, [transactions, userVaultBalance])
+
   return (
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
       <Navbar />
 
-      <div className="flex">
-        {/* Left Sidebar - Hidden on mobile */}
-        <aside className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4" style={{ backgroundColor: '#0E0E11' }}>
-          <nav className="space-y-4">
-            <a href="#" className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium">
+      <div className="flex relative">
+        {/* Overlay for mobile */}
+        {mounted && sidebarOpen && (
+          <div
+            className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
+            onClick={() => setSidebarOpen(false)}
+            suppressHydrationWarning
+          />
+        )}
+
+        {/* Left Sidebar - Always render with consistent classes */}
+        <aside
+          className={`fixed lg:static top-16 lg:top-0 inset-y-0 lg:inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] lg:min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
+            mounted && sidebarOpen ? '!translate-x-0' : ''
+          }`}
+          style={{ backgroundColor: '#0E0E11' }}
+          suppressHydrationWarning
+        >
+          <nav className="space-y-2 pt-4 lg:pt-0">
+            <Link 
+              href="/dashboard" 
+              className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
+              onClick={() => mounted && setSidebarOpen(false)}
+            >
               <Home className="w-5 h-5" />
               <span>Home</span>
-            </a>
-            <Link href="/ai-assistant" className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            </Link>
+            <Link 
+              href="/ai-assistant" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => mounted && setSidebarOpen(false)}
+            >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
             </Link>
-            <a href="#" className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-              <Settings className="w-5 h-5" />
-              <span>Strategy</span>
-            </a>
+            <Link 
+              href="/deposit" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => mounted && setSidebarOpen(false)}
+            >
+              <ArrowDownToLine className="w-5 h-5" />
+              <span>Deposit</span>
+            </Link>
+            <Link 
+              href="/withdrawal" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => mounted && setSidebarOpen(false)}
+            >
+              <ArrowUpFromLine className="w-5 h-5" />
+              <span>Withdrawal</span>
+            </Link>
           </nav>
         </aside>
 
@@ -318,7 +383,9 @@ export default function DashboardPage() {
           {/* Dashboard Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">Hi Docky</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-1">
+                {isConnected ? `Hi ${displayName}` : 'Hi Guest'}
+              </h2>
               <p className="text-white/60 text-sm sm:text-base">Start earning</p>
               {!isConnected && (
                 <p className="text-yellow-400 text-xs mt-1">⚠️ Wallet not connected</p>
@@ -326,17 +393,15 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-[#2BA3FF] flex items-center justify-center">
-                  <span className="text-white text-xs font-semibold">D</span>
-                </div>
-              </div>
-              <Link href="/deposit" className="px-3 sm:px-4 py-2 text-sm sm:text-base bg-[#2BA3FF] text-white rounded-lg font-semibold hover:bg-[#1a8fdb] transition-colors">
-                Deposit
-              </Link>
-              <Link href="/withdrawal" className="px-3 sm:px-4 py-2 text-sm sm:text-base border border-white/20 text-white rounded-lg font-semibold hover:bg-white/10 transition-colors">
-                Withdrawal
-              </Link>
+              {/* Mobile Hamburger Button */}
+              <button
+                onClick={() => mounted && setSidebarOpen(!sidebarOpen)}
+                className="lg:hidden p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
+                aria-label="Toggle sidebar"
+                suppressHydrationWarning
+              >
+                {mounted && (sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />)}
+              </button>
               <div className="relative">
                 <Bell className="w-5 h-5 text-white" />
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-xs text-white">12</span>
@@ -344,44 +409,85 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* AI Assistant Promo Card - Mobile/Tablet */}
+          <div className="lg:hidden mb-6">
+            <Link href="/ai-assistant" className="block bg-[#2BA3FF]/10 border border-[#2BA3FF]/30 rounded-2xl p-6 hover:bg-[#2BA3FF]/15 hover:border-[#2BA3FF]/50 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-[#2BA3FF] flex items-center justify-center flex-shrink-0">
+                  <Brain className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-semibold text-lg mb-1">AI Yield Advisor</h3>
+                  <p className="text-white/70 text-sm">Get personalized help with deposits, withdrawals, and strategy</p>
+                </div>
+                <ArrowRight className="w-5 h-5 text-white/70" />
+              </div>
+            </Link>
+          </div>
+
           {/* Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             {/* Available Balance Card */}
-            <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white/70 text-sm font-medium">Vault Balance</h3>
-                <div className="flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-white/50" />
-                  <ArrowRight className="w-4 h-4 text-white/50" />
-                </div>
-              </div>
-              <p className="text-3xl font-bold text-white mb-2">
-                {isLoadingBalance
-                  ? 'Loading...'
-                  : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
-                  ? `$${parseFloat(formatUnits(userVaultBalance, 18)).toFixed(2)}`
-                  : isConnected
-                  ? '$0.00'
-                  : '$0.00'}
-              </p>
-              <p className="text-green-400 text-sm">
-                {isLoadingBalance
-                  ? 'Calculating...'
-                  : dailyEarnings !== null
-                  ? `+${dailyEarnings.toFixed(6)} cUSD/day`
-                  : isConnected
-                  ? '$0.00/day'
-                  : 'Connect wallet to see earnings'}
-              </p>
-              {isConnected && (
-                <p className="text-white/50 text-xs mt-2">
-                  Wallet: {isLoadingWalletBalance 
-                    ? 'Loading...' 
-                    : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
-                    ? `${formatUnits(walletBalance, 18)} cUSD`
-                    : '0.00 cUSD'}
-                </p>
+            <div className="relative bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 overflow-hidden">
+              {/* Yield Animation Background */}
+              {isConnected && userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0) && (
+                <YieldAnimation 
+                  balance={parseFloat(formatUnits(userVaultBalance, 18))}
+                  apy={apyPercent}
+                  isVisible={balanceVisible}
+                />
               )}
+              
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-white/70 text-sm font-medium">Vault Balance</h3>
+                  <div className="flex items-center gap-5">
+                    <button
+                      onClick={() => setBalanceVisible(!balanceVisible)}
+                      className="p-1 hover:bg-white/5 rounded transition-colors"
+                      aria-label={balanceVisible ? 'Hide balance' : 'Show balance'}
+                    >
+                      <Eye className={`w-4 h-4 ${balanceVisible ? 'text-white/50' : 'text-white/30'}`} />
+                    </button>
+                    <ArrowRight className="w-4 h-4 text-white/50" />
+                  </div>
+                </div>
+                <p className="text-3xl font-bold text-white mb-2">
+                {balanceVisible ? (
+                  isLoadingBalance
+                    ? 'Loading...'
+                    : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
+                    ? `$${parseFloat(formatUnits(userVaultBalance, 18)).toFixed(2)}`
+                    : isConnected
+                    ? '$0.00'
+                    : '$0.00'
+                ) : (
+                  '••••••'
+                )}
+              </p>
+              {balanceVisible && (
+                <>
+                  <p className="text-green-400 text-sm">
+                    {isLoadingBalance
+                      ? 'Calculating...'
+                      : dailyEarnings !== null
+                      ? `+${dailyEarnings.toFixed(6)} cUSD/day`
+                      : isConnected
+                      ? '$0.00/day'
+                      : 'Connect wallet to see earnings'}
+                  </p>
+                  {isConnected && (
+                    <p className="text-white/50 text-xs mt-2">
+                      Wallet: {isLoadingWalletBalance 
+                        ? 'Loading...' 
+                        : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
+                        ? `${formatUnits(walletBalance, 18)} cUSD`
+                        : '0.00 cUSD'}
+                    </p>
+                  )}
+                </>
+              )}
+              </div>
             </div>
 
             {/* Current APY Card */}
@@ -411,26 +517,32 @@ export default function DashboardPage() {
             <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
               <h3 className="text-white/70 text-sm font-medium mb-4">Total Earnings</h3>
               <p className="text-3xl font-bold text-white mb-2">
-                {isLoadingBalance || isLoadingTotalAssets
-                  ? 'Loading...'
-                  : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
-                  ? (() => {
-                      const userBalance = Number(formatUnits(userVaultBalance, 18))
-                      return userBalance > 0 ? userBalance.toFixed(6) : '0.000000'
-                    })()
-                  : isConnected
-                  ? '0.000000'
-                  : '0.000000'}
+                {balanceVisible ? (
+                  isLoadingBalance || isLoadingTotalAssets
+                    ? 'Loading...'
+                    : userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint'
+                    ? (() => {
+                        const userBalance = Number(formatUnits(userVaultBalance, 18))
+                        return userBalance > 0 ? userBalance.toFixed(6) : '0.000000'
+                      })()
+                    : isConnected
+                    ? '0.000000'
+                    : '0.000000'
+                ) : (
+                  '••••••'
+                )}
               </p>
-              <p className="text-green-400 text-sm">
-                {isLoadingAPY
-                  ? 'Calculating...'
-                  : apyPercent !== null
-                  ? `Current APY: ${apyPercent.toFixed(2)}%`
-                  : isConnected
-                  ? 'APY: 0.00%'
-                  : 'Connect wallet'}
-              </p>
+              {balanceVisible && (
+                <p className="text-green-400 text-sm">
+                  {isLoadingAPY
+                    ? 'Calculating...'
+                    : apyPercent !== null
+                    ? `Current APY: ${apyPercent.toFixed(2)}%`
+                    : isConnected
+                    ? 'APY: 0.00%'
+                    : 'Connect wallet'}
+                </p>
+              )}
             </div>
           </div>
 
@@ -505,7 +617,19 @@ export default function DashboardPage() {
             {/* Balance Chart */}
             <div className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6">
               <h3 className="text-white font-semibold mb-4">Balance</h3>
-              <div className="h-64 relative">
+              <div className="h-64 relative" 
+                onMouseLeave={() => setHoveredPoint(null)}
+                onMouseMove={(e) => {
+                  if (hoveredPoint) {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setHoveredPoint({
+                      ...hoveredPoint,
+                      x: e.clientX - rect.left,
+                      y: e.clientY - rect.top - 50,
+                    })
+                  }
+                }}
+              >
                 {balanceHistory.length === 0 ? (
                   <div className="flex items-center justify-center h-full text-white/40">
                     {isLoading ? (
@@ -604,18 +728,52 @@ export default function DashboardPage() {
                               />
                             )}
                             
-                            {/* Data points */}
-                            {points.map((point, index) => (
-                              <circle
-                                key={index}
-                                cx={point.x}
-                                cy={point.y}
-                                r="4"
-                                fill="#2BA3FF"
-                                stroke="#141414"
-                                strokeWidth="2"
-                              />
-                            ))}
+                            {/* Data points with hover */}
+                            {points.map((point, index) => {
+                              const item = balanceHistory[index]
+                              return (
+                                <g key={index}>
+                                  {/* Invisible larger circle for easier hovering */}
+                                  <circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r="12"
+                                    fill="transparent"
+                                    style={{ cursor: 'pointer' }}
+                                    onMouseEnter={(e) => {
+                                      const container = e.currentTarget.closest('.h-64')
+                                      if (container) {
+                                        const rect = container.getBoundingClientRect()
+                                        const svg = e.currentTarget.closest('svg')
+                                        if (svg) {
+                                          const svgRect = svg.getBoundingClientRect()
+                                          // Convert SVG coordinates to container coordinates
+                                          const svgX = (point.x + 50) * (svgRect.width / 500)
+                                          const svgY = (point.y + 20) * (svgRect.height / 250)
+                                          setHoveredPoint({
+                                            x: svgX,
+                                            y: svgY - 50,
+                                            value: item.value,
+                                            label: item.label,
+                                            date: item.date,
+                                          })
+                                        }
+                                      }
+                                    }}
+                                  />
+                                  {/* Visible circle */}
+                                  <circle
+                                    cx={point.x}
+                                    cy={point.y}
+                                    r="4"
+                                    fill="#2BA3FF"
+                                    stroke="#141414"
+                                    strokeWidth="2"
+                                    style={{ pointerEvents: 'none' }}
+                                  />
+                                </g>
+                              )
+                            })}
                             
                             {/* X-axis labels */}
                             {balanceHistory.map((item, index) => {
@@ -640,6 +798,32 @@ export default function DashboardPage() {
                       })()}
                     </g>
                   </svg>
+                )}
+                
+                {/* Tooltip */}
+                {hoveredPoint && (
+                  <div
+                    className="absolute bg-[#1a1a1d] border border-[#2BA3FF]/30 rounded-lg p-3 shadow-xl z-10 pointer-events-none min-w-[140px]"
+                    style={{
+                      left: `${hoveredPoint.x}px`,
+                      top: `${Math.max(10, hoveredPoint.y)}px`,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    <div className="text-white text-sm font-semibold mb-1">
+                      ${hoveredPoint.value.toFixed(6)} cUSD
+                    </div>
+                    <div className="text-white/60 text-xs">
+                      {hoveredPoint.label}
+                    </div>
+                    <div className="text-white/50 text-xs mt-1">
+                      {hoveredPoint.date.toLocaleDateString()}
+                    </div>
+                    {/* Tooltip arrow */}
+                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-full">
+                      <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#2BA3FF]/30"></div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

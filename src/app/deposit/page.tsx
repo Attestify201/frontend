@@ -13,7 +13,11 @@ import {
   Loader2,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Menu,
+  X
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
 import Link from 'next/link'
@@ -79,6 +83,7 @@ export default function DepositPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [txStatus, setTxStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { address, isConnected } = useAccount()
 
@@ -371,7 +376,7 @@ export default function DepositPage() {
 
   // Handle deposit success - auto-refresh all balances
   useEffect(() => {
-    if (isDepositSuccess) {
+    if (isDepositSuccess && depositHash) {
       setTxStatus('success')
       setAmount('')
       
@@ -405,19 +410,13 @@ export default function DepositPage() {
         refreshAllData()
       }, 12000)
       
-      // Reset success status after 3 seconds
-      const timer4 = setTimeout(() => {
-        setTxStatus('idle')
-      }, 3000)
-      
       return () => {
         clearTimeout(timer1)
         clearTimeout(timer2)
         clearTimeout(timer3)
-        clearTimeout(timer4)
       }
     }
-  }, [isDepositSuccess, refetchBalance, refetchShares, refetchVaultBalance, refetchAllowance, refetchTotalAssets, refetchDeposits, refetchWithdrawals])
+  }, [isDepositSuccess, depositHash, refetchBalance, refetchShares, refetchVaultBalance, refetchAllowance, refetchTotalAssets, refetchDeposits, refetchWithdrawals])
 
   // Handle errors from writeContract hooks
   useEffect(() => {
@@ -609,21 +608,63 @@ export default function DepositPage() {
       <Navbar />
 
       <div className="flex">
-        {/* Left Sidebar - Hidden on mobile */}
-        <aside className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4" style={{ backgroundColor: '#0E0E11' }}>
-          <nav className="space-y-4">
-            <Link href="/dashboard" className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+        {/* Mobile Hamburger Button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="lg:hidden fixed top-20 left-4 z-50 p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
+          aria-label="Toggle sidebar"
+        >
+          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+
+        {/* Overlay for mobile */}
+        {sidebarOpen && (
+          <div
+            className="lg:hidden fixed inset-0 bg-black/50 z-40"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Left Sidebar */}
+        <aside
+          className={`fixed lg:static inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
+            sidebarOpen ? '!translate-x-0' : ''
+          }`}
+          style={{ backgroundColor: '#0E0E11' }}
+        >
+          <nav className="space-y-2 pt-12 lg:pt-0">
+            <Link 
+              href="/dashboard" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => setSidebarOpen(false)}
+            >
               <Home className="w-5 h-5" />
               <span>Home</span>
             </Link>
-            <Link href="/ai-assistant" className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
+            <Link 
+              href="/ai-assistant" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => setSidebarOpen(false)}
+            >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
             </Link>
-            <a href="#" className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors">
-              <Settings className="w-5 h-5" />
-              <span>Strategy</span>
-            </a>
+            <Link 
+              href="/deposit" 
+              className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <ArrowDownToLine className="w-5 h-5" />
+              <span>Deposit</span>
+            </Link>
+            <Link 
+              href="/withdrawal" 
+              className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <ArrowUpFromLine className="w-5 h-5" />
+              <span>Withdrawal</span>
+            </Link>
           </nav>
         </aside>
 
@@ -897,80 +938,80 @@ export default function DepositPage() {
                           )}
                         </div>
                       ) : (
-                        <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" className="w-full">
-                          {/* Y-axis labels on the left - hidden when balance is hidden */}
+                      <svg width="100%" height={chartHeight} viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="xMidYMid meet" className="w-full">
+                        {/* Y-axis labels on the left - hidden when balance is hidden */}
                           {!balanceHidden && balanceHistory.length > 1 && balanceHistory.map((item, index) => {
-                            const y = padding + (index / (balanceHistory.length - 1)) * chartInnerHeight
-                            return (
-                              <text
-                                key={`y-axis-${index}`}
-                                x={10}
-                                y={y + 4}
-                                textAnchor="start"
-                                className="text-xs fill-white/70"
-                                fontSize="12"
-                              >
+                          const y = padding + (index / (balanceHistory.length - 1)) * chartInnerHeight
+                          return (
+                            <text
+                              key={`y-axis-${index}`}
+                              x={10}
+                              y={y + 4}
+                              textAnchor="start"
+                              className="text-xs fill-white/70"
+                              fontSize="12"
+                            >
                                 ${item.value.toFixed(2)}
-                              </text>
-                            )
-                          })}
-                          
-                          {/* Area fill */}
+                            </text>
+                          )
+                        })}
+                        
+                        {/* Area fill */}
                           {areaPath && (
-                            <path
-                              d={areaPath}
-                              fill="url(#balanceGradient)"
-                              opacity={0.3}
-                            />
+                        <path
+                          d={areaPath}
+                          fill="url(#balanceGradient)"
+                          opacity={0.3}
+                        />
                           )}
-                          {/* Line */}
+                        {/* Line */}
                           {linePath && (
-                            <path
-                              d={linePath}
-                              fill="none"
-                              stroke="#2BA3FF"
-                              strokeWidth="2.5"
-                            />
+                        <path
+                          d={linePath}
+                          fill="none"
+                          stroke="#2BA3FF"
+                          strokeWidth="2.5"
+                        />
                           )}
-                          {/* Data points */}
-                          {points.map((point, index) => (
-                            <circle
-                              key={index}
-                              cx={point.x}
-                              cy={point.y}
-                              r="4"
-                              fill="#2BA3FF"
-                              stroke="#0E0E11"
-                              strokeWidth="1.5"
-                            />
-                          ))}
-                          {/* Gradient definition */}
-                          <defs>
-                            <linearGradient id="balanceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                              <stop offset="0%" stopColor="#2BA3FF" stopOpacity={0.5} />
-                              <stop offset="100%" stopColor="#2BA3FF" stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          {/* X-axis labels - at the bottom */}
-                          {balanceHistory.map((item, index) => {
+                        {/* Data points */}
+                        {points.map((point, index) => (
+                          <circle
+                            key={index}
+                            cx={point.x}
+                            cy={point.y}
+                            r="4"
+                            fill="#2BA3FF"
+                            stroke="#0E0E11"
+                            strokeWidth="1.5"
+                          />
+                        ))}
+                        {/* Gradient definition */}
+                        <defs>
+                          <linearGradient id="balanceGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor="#2BA3FF" stopOpacity={0.5} />
+                            <stop offset="100%" stopColor="#2BA3FF" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        {/* X-axis labels - at the bottom */}
+                        {balanceHistory.map((item, index) => {
                             const x = balanceHistory.length > 1
                               ? padding + (index / (balanceHistory.length - 1)) * chartInnerWidth
                               : padding + chartInnerWidth / 2
-                            return (
-                              <text
-                                key={index}
-                                x={x}
-                                y={chartHeight - 10}
-                                textAnchor="middle"
-                                className="text-xs fill-white/70"
-                                fontSize="13"
-                                fontWeight="500"
-                              >
-                                {item.label}
-                              </text>
-                            )
-                          })}
-                        </svg>
+                          return (
+                            <text
+                              key={index}
+                              x={x}
+                              y={chartHeight - 10}
+                              textAnchor="middle"
+                              className="text-xs fill-white/70"
+                              fontSize="13"
+                              fontWeight="500"
+                            >
+                              {item.label}
+                            </text>
+                          )
+                        })}
+                      </svg>
                       )}
                     </div>
                   </div>
@@ -980,6 +1021,7 @@ export default function DepositPage() {
           </div>
         </main>
       </div>
+
     </div>
   )
 }
