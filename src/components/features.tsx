@@ -2,12 +2,12 @@
 
 import React, { useRef } from 'react'
 import { motion, useInView, Variants } from 'framer-motion'
-import { ShieldCheck, TrendingUp, Bot, LockKeyhole, Wallet, LineChart } from 'lucide-react'
+import { TrendingUp, Bot, Wallet, LineChart, DollarSign, Smartphone } from 'lucide-react'
 
 type Feature = {
   title: string
   description: string
-  icon: typeof ShieldCheck
+  icon: typeof TrendingUp
   badgeClass: string
 }
 
@@ -26,15 +26,15 @@ const features: Feature[] = [
     badgeClass: 'badge-green',
   },
   {
-    title: 'Smart Contract Security',
-    description: 'Audited smart contracts and battle-tested DeFi protocols. Your funds stay under your control with transparent, on-chain operations.',
-    icon: ShieldCheck,
+    title: 'Transparent & Low Fees',
+    description: 'No hidden costs, no surprises. Enjoy competitive rates with full transparency. Every fee is clearly displayed before you commit.',
+    icon: DollarSign,
     badgeClass: 'badge-cyan',
   },
   {
-    title: 'Bank-Grade Security',
-    description: 'Audited smart contracts and battle-tested DeFi protocols. Your funds stay under your control.',
-    icon: LockKeyhole,
+    title: 'Mobile-First Experience',
+    description: 'Access your vault from anywhere, anytime. Optimized for mobile devices with a seamless experience across all platforms.',
+    icon: Smartphone,
     badgeClass: 'badge-purple',
   },
   {
@@ -81,16 +81,16 @@ const Features = () => {
   }
 
   return (
-    <section className="w-full py-12 px-4" style={{ backgroundColor: '#141414' }}>
+    <section className="w-full py-8 sm:py-12 px-4 sm:px-6" style={{ backgroundColor: '#141414' }}>
       <motion.div 
-        className='text-center mx-auto py-14 px-4'
+        className='text-center mx-auto py-8 sm:py-12 md:py-14 px-4'
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.6 }}
       >
-        <h3 className='text-white font-semibold tracking-tight text-3xl md:text-4xl mb-2'>Everything You Need to Earn with Confidence</h3>
-        <p className='text-[#939393F2]'>Professional-grade features designed for everyone</p>
+        <h3 className='text-white font-semibold tracking-tight text-2xl sm:text-3xl md:text-4xl mb-2 px-2 sm:px-0'>Everything You Need to Earn with Confidence</h3>
+        <p className='text-[#939393F2] text-sm sm:text-base px-2 sm:px-0'>Professional-grade features designed for everyone</p>
       </motion.div>
 
       <motion.div 
@@ -109,7 +109,7 @@ const Features = () => {
               scale: 1.02,
               transition: { duration: 0.2 }
             }}
-            className="relative overflow-hidden rounded-2xl bg-[#0a0a0a] border border-white/5 p-6 text-white shadow-lg group cursor-pointer"
+            className="relative overflow-hidden rounded-2xl bg-[#0a0a0a] border border-white/5 p-4 sm:p-6 text-white shadow-lg group cursor-pointer"
           >
             <motion.div
               className={`absolute -right-4 -top-4 flex h-14 w-14 items-center justify-center rounded-xl ${badgeClass} shadow-[0_0_35px_rgba(0,0,0,0.45)] ring-1 ring-white/10`}
@@ -128,8 +128,8 @@ const Features = () => {
               initial={false}
             />
             
-            <h3 className="mb-3 pr-12 text-xl font-semibold relative z-10">{title}</h3>
-            <p className="text-sm leading-6 text-gray-300 relative z-10">{description}</p>
+            <h3 className="mb-2 sm:mb-3 pr-10 sm:pr-12 text-lg sm:text-xl font-semibold relative z-10">{title}</h3>
+            <p className="text-xs sm:text-sm leading-5 sm:leading-6 text-gray-300 relative z-10">{description}</p>
           </motion.div>
         ))}
       </motion.div>

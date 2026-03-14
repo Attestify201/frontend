@@ -15,14 +15,12 @@ import {
   ExternalLink,
   Info,
   ArrowDownToLine,
-  ArrowUpFromLine,
-  Menu,
-  X
+  ArrowUpFromLine
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, formatUnits, type Address } from 'viem'
 import { AttestifyVaultContract, CUSD_ADDRESS } from '../abi'
@@ -34,7 +32,7 @@ function isInMiniApp(): boolean {
   return window.self !== window.top || !!window.ReactNativeWebView
 }
 
-// ERC20 ABI for approvals
+// ERC20 ABI for approvals and balance checks
 const ERC20_ABI = [
   {
     inputs: [
@@ -44,6 +42,13 @@ const ERC20_ABI = [
     name: 'approve',
     outputs: [{ name: '', type: 'bool' }],
     stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'account', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
     type: 'function',
   },
 ] as const
@@ -67,7 +72,22 @@ const VAULT_ABI = [
     stateMutability: 'nonpayable',
     type: 'function',
   },
+  {
+    inputs: [{ name: 'account', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const
+
+// Deposit limits (in USDm)
+const MIN_DEPOSIT_USDM = 1 // 1 USDm minimum
+const MAX_DEPOSIT_USDM = 100000 // 100,000 USDm maximum
+
+// Convert to wei (18 decimals)
+const MIN_DEPOSIT_WEI = parseUnits(MIN_DEPOSIT_USDM.toString(), 18)
+const MAX_DEPOSIT_WEI = parseUnits(MAX_DEPOSIT_USDM.toString(), 18)
 
 type Message = {
   role: 'user' | 'assistant'
@@ -75,7 +95,7 @@ type Message = {
   timestamp: Date
   transactionRequest?: {
     action: 'deposit' | 'withdraw'
-    amount_cusd: number
+    amount_usdm: number
   }
   txHash?: string
 }
@@ -91,7 +111,31 @@ type TransactionStatus = {
 export default function AIAssistantPage() {
   const router = useRouter()
   const { address, isConnected } = useAccount()
-  const { writeContract, data: txHash } = useWriteContract()
+  const { writeContract, data: txHash, error: writeError, reset: resetWrite } = useWriteContract()
+  
+  // Read user's wallet USDm balance
+  const { data: walletBalance, refetch: refetchWalletBalance } = useReadContract({
+    address: CUSD_ADDRESS as Address,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address && isConnected,
+      refetchInterval: 10000,
+    },
+  })
+
+  // Read user's vault balance
+  const { data: vaultBalance, refetch: refetchVaultBalance } = useReadContract({
+    address: AttestifyVaultContract.address as Address,
+    abi: VAULT_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address && isConnected,
+      refetchInterval: 10000,
+    },
+  })
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -119,12 +163,19 @@ export default function AIAssistantPage() {
     selfxyz?: { verified: boolean; registeredAt: string | null } | null
   } | null>(null)
   const [showTrustInfo, setShowTrustInfo] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const { isLoading: isApproving, isSuccess: isApproveSuccess } = useWaitForTransactionReceipt({
+  const { 
+    isLoading: isApproving, 
+    isSuccess: isApproveSuccess,
+    error: approveTxError 
+  } = useWaitForTransactionReceipt({
     hash: approveHash,
   })
-  const { isLoading: isExecuting, isSuccess: isExecuteSuccess } = useWaitForTransactionReceipt({
+  const { 
+    isLoading: isExecuting, 
+    isSuccess: isExecuteSuccess,
+    error: executeTxError 
+  } = useWaitForTransactionReceipt({
     hash: vaultHash,
   })
 
@@ -190,6 +241,63 @@ export default function AIAssistantPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showTrustInfo])
 
+  // Format amount for display
+  const formatAmount = (value: bigint | undefined) => {
+    if (value === undefined || value === null) return '0.00'
+    try {
+      const formatted = formatUnits(value, 18)
+      const num = parseFloat(formatted)
+      if (num >= 1000) {
+        return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      } else if (num >= 1) {
+        return num.toFixed(4).replace(/\.?0+$/, '')
+      } else {
+        return num.toFixed(4).replace(/\.?0+$/, '')
+      }
+    } catch {
+      return '0.00'
+    }
+  }
+
+  // Validate transaction before execution
+  const validateTransaction = (): string | null => {
+    if (!transactionStatus) return 'No transaction to validate'
+
+    const amountWei = parseUnits(transactionStatus.amount.toString(), 18)
+
+    // Check minimum deposit/withdrawal
+    if (amountWei < MIN_DEPOSIT_WEI) {
+      return `Minimum ${transactionStatus.type} is ${MIN_DEPOSIT_USDM} USDm. Please enter at least ${MIN_DEPOSIT_USDM} USDm.`
+    }
+
+    // Check maximum deposit/withdrawal
+    if (amountWei > MAX_DEPOSIT_WEI) {
+      return `Maximum ${transactionStatus.type} is ${MAX_DEPOSIT_USDM.toLocaleString()} USDm. Please enter a smaller amount.`
+    }
+
+    // Check sufficient balance for deposit
+    if (transactionStatus.type === 'deposit') {
+      if (walletBalance !== undefined && typeof walletBalance === 'bigint') {
+        if (walletBalance < amountWei) {
+          const balanceFormatted = formatAmount(walletBalance)
+          return `Insufficient balance. You have ${balanceFormatted} USDm, but trying to deposit ${transactionStatus.amount} USDm.`
+        }
+      }
+    }
+
+    // Check sufficient vault balance for withdrawal
+    if (transactionStatus.type === 'withdraw') {
+      if (vaultBalance !== undefined && typeof vaultBalance === 'bigint') {
+        if (vaultBalance < amountWei) {
+          const balanceFormatted = formatAmount(vaultBalance)
+          return `Insufficient vault balance. You have ${balanceFormatted} USDm in the vault, but trying to withdraw ${transactionStatus.amount} USDm.`
+        }
+      }
+    }
+
+    return null
+  }
+
   // Handle transaction execution after approval
   useEffect(() => {
     if (isApproveSuccess && transactionStatus?.status === 'approving') {
@@ -197,15 +305,98 @@ export default function AIAssistantPage() {
     }
   }, [isApproveSuccess])
 
-  // Handle transaction success and submit feedback
+  // Handle transaction success
   useEffect(() => {
     if (isExecuteSuccess && transactionStatus && vaultHash) {
       handleTransactionSuccess(vaultHash)
     }
   }, [isExecuteSuccess, vaultHash])
 
+  // Handle approval transaction errors
+  useEffect(() => {
+    if (approveTxError && transactionStatus?.status === 'approving') {
+      const errorMsg = approveTxError.message || 'Approval transaction failed'
+      handleTransactionError(humanizeError(errorMsg))
+    }
+  }, [approveTxError, transactionStatus])
+
+  // Handle execution transaction errors
+  useEffect(() => {
+    if (executeTxError && transactionStatus?.status === 'executing') {
+      const errorMsg = executeTxError.message || 'Transaction failed'
+      handleTransactionError(humanizeError(errorMsg))
+    }
+  }, [executeTxError, transactionStatus])
+
+  // Handle writeContract errors
+  useEffect(() => {
+    if (writeError && transactionStatus) {
+      const errorMsg = writeError.message || 'Transaction failed'
+      handleTransactionError(humanizeError(errorMsg))
+      resetWrite()
+    }
+  }, [writeError, transactionStatus, resetWrite])
+
+  // Humanize error messages
+  const humanizeError = (errorMsg: string): string => {
+    const errorMsgLower = errorMsg.toLowerCase()
+    
+    if (errorMsgLower.includes('user rejected') || errorMsgLower.includes('user denied') || errorMsgLower.includes('user cancelled')) {
+      return 'Transaction was cancelled. Please try again when ready.'
+    } else if (errorMsgLower.includes('insufficient balance')) {
+      return 'Insufficient balance. Please check your wallet balance and try again.'
+    } else if (errorMsgLower.includes('insufficient allowance')) {
+      return 'Insufficient allowance. Please approve USDm first.'
+    } else if (errorMsgLower.includes('execution reverted')) {
+      if (errorMsgLower.includes('min') || errorMsgLower.includes('minimum')) {
+        return `Transaction amount is below the minimum. Minimum ${transactionStatus?.type || 'transaction'} is ${MIN_DEPOSIT_USDM} USDm.`
+      } else if (errorMsgLower.includes('max') || errorMsgLower.includes('maximum')) {
+        return `Transaction amount exceeds the maximum. Maximum ${transactionStatus?.type || 'transaction'} is ${MAX_DEPOSIT_USDM.toLocaleString()} USDm.`
+      } else {
+        return 'Transaction was reverted. Please check the amount and your balance, then try again.'
+      }
+    } else if (errorMsgLower.includes('network') || errorMsgLower.includes('connection')) {
+      return 'Network error. Please check your connection and try again.'
+    }
+    
+    return errorMsg
+  }
+
+  // Handle transaction error
+  const handleTransactionError = (errorMessage: string) => {
+    if (!transactionStatus) return
+
+    setTransactionStatus({
+      ...transactionStatus,
+      status: 'error',
+      error: errorMessage,
+    })
+
+    // Add error message to chat
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: `❌ Transaction failed: ${errorMessage}. How else can I help you?`,
+        timestamp: new Date(),
+      },
+    ])
+
+    // Clear transaction status after 5 seconds
+    setTimeout(() => {
+      setTransactionStatus(null)
+    }, 5000)
+  }
+
   const executeTransaction = async () => {
     if (!transactionStatus || !address) return
+
+    // Validate before executing
+    const validationError = validateTransaction()
+    if (validationError) {
+      handleTransactionError(validationError)
+      return
+    }
 
     try {
       setTransactionStatus((prev) => prev ? { ...prev, status: 'executing' } : null)
@@ -230,15 +421,8 @@ export default function AIAssistantPage() {
         })
       }
     } catch (error) {
-      setTransactionStatus((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: 'error',
-              error: error instanceof Error ? error.message : 'Transaction failed',
-            }
-          : null
-      )
+      const errorMsg = error instanceof Error ? error.message : 'Transaction failed'
+      handleTransactionError(humanizeError(errorMsg))
     }
   }
 
@@ -249,12 +433,17 @@ export default function AIAssistantPage() {
       prev ? { ...prev, status: 'success', txHash } : null
     )
 
-    // Add success message to chat
+    // Refetch balances to update UI
+    refetchWalletBalance()
+    refetchVaultBalance()
+
+    // Add success message to chat with transaction details
+    const actionText = transactionStatus.type === 'deposit' ? 'deposited' : 'withdrawn'
     setMessages((prev) => [
       ...prev,
       {
         role: 'assistant',
-        content: `✅ Transaction successful! Your ${transactionStatus.type} of $${transactionStatus.amount} cUSD has been completed.`,
+        content: `✅ Transaction successful! You've ${actionText} $${transactionStatus.amount} USDm. Your balances have been updated. Transaction hash: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
         timestamp: new Date(),
         txHash: txHash,
       },
@@ -323,10 +512,10 @@ export default function AIAssistantPage() {
 
       // Handle transaction request
       if (data.transactionRequest) {
-        const { action, amount_cusd } = data.transactionRequest
+        const { action, amount_usdm } = data.transactionRequest
         setTransactionStatus({
           type: action,
-          amount: amount_cusd,
+          amount: amount_usdm,
           status: 'pending',
         })
       }
@@ -347,6 +536,13 @@ export default function AIAssistantPage() {
   const handleApproveTransaction = async () => {
     if (!transactionStatus || !address) return
 
+    // Validate before approving
+    const validationError = validateTransaction()
+    if (validationError) {
+      handleTransactionError(validationError)
+      return
+    }
+
     try {
       setTransactionStatus((prev) => prev ? { ...prev, status: 'approving' } : null)
 
@@ -359,15 +555,8 @@ export default function AIAssistantPage() {
         args: [AttestifyVaultContract.address as Address, maxApproval],
       })
     } catch (error) {
-      setTransactionStatus((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: 'error',
-              error: error instanceof Error ? error.message : 'Approval failed',
-            }
-          : null
-      )
+      const errorMsg = error instanceof Error ? error.message : 'Approval failed'
+      handleTransactionError(humanizeError(errorMsg))
     }
   }
 
@@ -399,36 +588,16 @@ export default function AIAssistantPage() {
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
       <Navbar />
 
-      <div className="flex relative">
-        {/* Mobile Hamburger Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="lg:hidden fixed top-20 left-4 z-50 p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
-          aria-label="Toggle sidebar"
-        >
-          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-
-        {/* Overlay for mobile */}
-        {sidebarOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
-        {/* Left Sidebar */}
+      <div className="flex">
+        {/* Left Sidebar - Hidden on mobile, visible on desktop */}
         <aside
-          className={`fixed lg:static inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
-            sidebarOpen ? '!translate-x-0' : ''
-          }`}
+          className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4"
           style={{ backgroundColor: '#0E0E11' }}
         >
-          <nav className="space-y-2 pt-12 lg:pt-0">
+          <nav className="space-y-2">
             <Link 
               href="/dashboard" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <Home className="w-5 h-5" />
               <span>Home</span>
@@ -436,7 +605,6 @@ export default function AIAssistantPage() {
             <a 
               href="#" 
               className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
-              onClick={() => setSidebarOpen(false)}
             >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
@@ -444,7 +612,6 @@ export default function AIAssistantPage() {
             <Link 
               href="/deposit" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowDownToLine className="w-5 h-5" />
               <span>Deposit</span>
@@ -452,7 +619,6 @@ export default function AIAssistantPage() {
             <Link 
               href="/withdrawal" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowUpFromLine className="w-5 h-5" />
               <span>Withdrawal</span>
@@ -594,7 +760,7 @@ export default function AIAssistantPage() {
                     {message.transactionRequest && (
                       <div className="mt-3 pt-3 border-t border-white/20">
                         <p className="text-xs text-white/70 mb-2">
-                          Transaction Request: {message.transactionRequest.action} ${message.transactionRequest.amount_cusd} cUSD
+                          Transaction Request: {message.transactionRequest.action} ${message.transactionRequest.amount_usdm} USDm
                         </p>
                       </div>
                     )}
@@ -649,12 +815,12 @@ export default function AIAssistantPage() {
                     </div>
                     <div className="space-y-2">
                       <p className="text-white/70 text-sm">Amount:</p>
-                      <p className="text-white font-semibold">${transactionStatus.amount} cUSD</p>
+                      <p className="text-white font-semibold">${transactionStatus.amount} USDm</p>
                     </div>
                     {transactionStatus.status === 'approving' && (
                       <div className="flex items-center gap-2 text-[#2BA3FF]">
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        <p className="text-sm">Approving cUSD...</p>
+                        <p className="text-sm">Approving USDm...</p>
                       </div>
                     )}
                     {transactionStatus.status === 'executing' && (
