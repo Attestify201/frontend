@@ -10,8 +10,6 @@ import {
   ArrowRight,
   ArrowDownToLine,
   ArrowUpFromLine,
-  Menu,
-  X,
   Loader2
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
@@ -27,13 +25,7 @@ import YieldAnimation from '../../components/yield-animation'
 export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [balanceVisible, setBalanceVisible] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; label: string; date: Date } | null>(null)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
   // Get connected wallet address from Farcaster
   // Note: Farcaster connector provides the Farcaster wallet address
   const { address, isConnected } = useAccount()
@@ -64,7 +56,7 @@ export default function DashboardPage() {
     },
   ] as const
 
-  // Read user's wallet cUSD balance
+  // Read user's wallet USDm balance
   const { 
     data: walletBalance,
     isLoading: isLoadingWalletBalance,
@@ -324,29 +316,16 @@ export default function DashboardPage() {
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
       <Navbar />
 
-      <div className="flex relative">
-        {/* Overlay for mobile */}
-        {mounted && sidebarOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
-            onClick={() => setSidebarOpen(false)}
-            suppressHydrationWarning
-          />
-        )}
-
-        {/* Left Sidebar - Always render with consistent classes */}
+      <div className="flex">
+        {/* Left Sidebar - Hidden on mobile, visible on desktop */}
         <aside
-          className={`fixed lg:static top-16 lg:top-0 inset-y-0 lg:inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] lg:min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
-            mounted && sidebarOpen ? '!translate-x-0' : ''
-          }`}
+          className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4"
           style={{ backgroundColor: '#0E0E11' }}
-          suppressHydrationWarning
         >
           <nav className="space-y-2 pt-4 lg:pt-0">
             <Link 
               href="/dashboard" 
               className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
-              onClick={() => mounted && setSidebarOpen(false)}
             >
               <Home className="w-5 h-5" />
               <span>Home</span>
@@ -354,7 +333,6 @@ export default function DashboardPage() {
             <Link 
               href="/ai-assistant" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => mounted && setSidebarOpen(false)}
             >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
@@ -362,7 +340,6 @@ export default function DashboardPage() {
             <Link 
               href="/deposit" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => mounted && setSidebarOpen(false)}
             >
               <ArrowDownToLine className="w-5 h-5" />
               <span>Deposit</span>
@@ -370,7 +347,6 @@ export default function DashboardPage() {
             <Link 
               href="/withdrawal" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => mounted && setSidebarOpen(false)}
             >
               <ArrowUpFromLine className="w-5 h-5" />
               <span>Withdrawal</span>
@@ -393,15 +369,23 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-              {/* Mobile Hamburger Button */}
-              <button
-                onClick={() => mounted && setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
-                aria-label="Toggle sidebar"
-                suppressHydrationWarning
-              >
-                {mounted && (sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />)}
-              </button>
+              {/* Mobile Deposit and Withdrawal Buttons */}
+              <div className="lg:hidden flex items-center gap-2">
+                <Link
+                  href="/deposit"
+                  className="flex items-center gap-2 px-4 py-2 bg-[#2BA3FF] text-white rounded-lg font-medium hover:bg-[#2BA3FF]/90 transition-colors"
+                >
+                  <ArrowDownToLine className="w-4 h-4" />
+                  <span>Deposit</span>
+                </Link>
+                <Link
+                  href="/withdrawal"
+                  className="flex items-center gap-2 px-4 py-2 bg-white/10 text-white border border-white/20 rounded-lg font-medium hover:bg-white/20 transition-colors"
+                >
+                  <ArrowUpFromLine className="w-4 h-4" />
+                  <span>Withdrawal</span>
+                </Link>
+              </div>
               <div className="relative">
                 <Bell className="w-5 h-5 text-white" />
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-xs text-white">12</span>
@@ -471,7 +455,7 @@ export default function DashboardPage() {
                     {isLoadingBalance
                       ? 'Calculating...'
                       : dailyEarnings !== null
-                      ? `+${dailyEarnings.toFixed(6)} cUSD/day`
+                      ? `+${dailyEarnings.toFixed(6)} USDm/day`
                       : isConnected
                       ? '$0.00/day'
                       : 'Connect wallet to see earnings'}
@@ -481,8 +465,8 @@ export default function DashboardPage() {
                       Wallet: {isLoadingWalletBalance 
                         ? 'Loading...' 
                         : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
-                        ? `${formatUnits(walletBalance, 18)} cUSD`
-                        : '0.00 cUSD'}
+                        ? `${formatUnits(walletBalance, 18)} USDm`
+                        : '0.00 USDm'}
                     </p>
                   )}
                 </>
@@ -811,7 +795,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div className="text-white text-sm font-semibold mb-1">
-                      ${hoveredPoint.value.toFixed(6)} cUSD
+                      ${hoveredPoint.value.toFixed(6)} USDm
                     </div>
                     <div className="text-white/60 text-xs">
                       {hoveredPoint.label}

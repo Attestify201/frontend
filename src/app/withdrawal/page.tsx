@@ -15,9 +15,7 @@ import {
   XCircle,
   AlertCircle,
   ArrowDownToLine,
-  ArrowUpFromLine,
-  Menu,
-  X
+  ArrowUpFromLine
 } from 'lucide-react'
 import Navbar from '../../components/navbar'
 import Link from 'next/link'
@@ -29,7 +27,7 @@ import { AttestifyVaultContract, CUSD_ADDRESS } from '../abi'
 import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
 
-// ERC20 ABI for cUSD token operations
+// ERC20 ABI for USDm token operations
 const ERC20_ABI = [
   {
     inputs: [{ name: 'account', type: 'address' }],
@@ -60,7 +58,7 @@ const isInMiniApp = (): boolean => {
 export default function WithdrawalPage() {
   const router = useRouter()
   const [amount, setAmount] = useState('')
-  const [currency, setCurrency] = useState<'cusd' | 'ngn'>('cusd')
+  const [currency, setCurrency] = useState<'usdm' | 'ngn'>('usdm')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
@@ -68,7 +66,6 @@ export default function WithdrawalPage() {
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [recipientAddress, setRecipientAddress] = useState<string>('')
   const [showRecipientInput, setShowRecipientInput] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { address, isConnected } = useAccount()
 
@@ -88,7 +85,7 @@ export default function WithdrawalPage() {
     },
   })
 
-  // Read user's wallet cUSD balance
+  // Read user's wallet USDm balance
   const { 
     data: walletBalance, 
     refetch: refetchWalletBalance 
@@ -105,7 +102,7 @@ export default function WithdrawalPage() {
 
   // Parse withdrawal amount
   const withdrawalAmount = useMemo(() => {
-    if (!amount || currency !== 'cusd') return BigInt(0)
+    if (!amount || currency !== 'usdm') return BigInt(0)
     try {
       return parseUnits(amount, 18)
     } catch {
@@ -359,8 +356,8 @@ export default function WithdrawalPage() {
       return
     }
 
-    if (currency !== 'cusd') {
-      setErrorMessage('Only cUSD withdrawals are currently supported.')
+    if (currency !== 'usdm') {
+      setErrorMessage('Only USDm withdrawals are currently supported.')
       return
     }
 
@@ -447,36 +444,16 @@ export default function WithdrawalPage() {
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
       <Navbar />
 
-      <div className="flex relative">
-        {/* Mobile Hamburger Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="lg:hidden fixed top-20 left-4 z-50 p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
-          aria-label="Toggle sidebar"
-        >
-          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-
-        {/* Overlay for mobile */}
-        {sidebarOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
-        {/* Left Sidebar */}
+      <div className="flex">
+        {/* Left Sidebar - Hidden on mobile, visible on desktop */}
         <aside
-          className={`fixed lg:static inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
-            sidebarOpen ? '!translate-x-0' : ''
-          }`}
+          className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4"
           style={{ backgroundColor: '#0E0E11' }}
         >
-          <nav className="space-y-2 pt-12 lg:pt-0">
+          <nav className="space-y-2">
             <Link 
               href="/dashboard" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <Home className="w-5 h-5" />
               <span>Home</span>
@@ -484,7 +461,6 @@ export default function WithdrawalPage() {
             <Link 
               href="/ai-assistant" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
@@ -492,7 +468,6 @@ export default function WithdrawalPage() {
             <Link 
               href="/deposit" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowDownToLine className="w-5 h-5" />
               <span>Deposit</span>
@@ -500,7 +475,6 @@ export default function WithdrawalPage() {
             <Link 
               href="/withdrawal" 
               className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowUpFromLine className="w-5 h-5" />
               <span>Withdrawal</span>
@@ -583,10 +557,10 @@ export default function WithdrawalPage() {
                     className="w-full flex items-center justify-between px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="flex items-center gap-2">
-                      {currency === 'cusd' ? (
+                      {currency === 'usdm' ? (
                         <>
                           <DollarSign className="w-4 h-4" />
-                          <span>cUSD</span>
+                          <span>USDm</span>
                         </>
                       ) : (
                         <>
@@ -601,15 +575,15 @@ export default function WithdrawalPage() {
                     <div className="absolute z-10 w-full mt-2 bg-[#1a1a1d] border border-white/10 rounded-lg overflow-hidden">
                       <button
                         onClick={() => {
-                          setCurrency('cusd')
+                          setCurrency('usdm')
                           setDropdownOpen(false)
                         }}
                         className={`w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-white/5 transition-colors ${
-                          currency === 'cusd' ? 'bg-[#2BA3FF]/20 text-[#2BA3FF]' : 'text-white'
+                          currency === 'usdm' ? 'bg-[#2BA3FF]/20 text-[#2BA3FF]' : 'text-white'
                         }`}
                       >
                         <DollarSign className="w-4 h-4" />
-                        <span>cUSD</span>
+                        <span>USDm</span>
                       </button>
                       <button
                         onClick={() => {
@@ -633,7 +607,7 @@ export default function WithdrawalPage() {
                 <label className="block text-white/70 text-sm mb-2">Amount</label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-lg">
-                    {currency === 'cusd' ? '$' : '₦'}
+                    {currency === 'usdm' ? '$' : '₦'}
                   </span>
                   <input
                     type="number"
@@ -647,11 +621,11 @@ export default function WithdrawalPage() {
                         setErrorMessage('')
                       }
                     }}
-                    placeholder={currency === 'cusd' ? 'Enter amount in cUSD' : 'Enter amount in NGN'}
+                    placeholder={currency === 'usdm' ? 'Enter amount in USDm' : 'Enter amount in NGN'}
                     className="w-full pl-10 pr-20 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
                   />
-                  {isConnected && currency === 'cusd' && userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0) && (
+                  {isConnected && currency === 'usdm' && userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0) && (
                     <button
                       type="button"
                       onClick={handleMaxClick}
@@ -664,7 +638,7 @@ export default function WithdrawalPage() {
                 </div>
                 {amount && withdrawalAmount > BigInt(0) && (
                   <p className="text-xs text-white/50 mt-1">
-                    ≈ {formatBalance(withdrawalAmount)} cUSD
+                    ≈ {formatBalance(withdrawalAmount)} USDm
                   </p>
                 )}
               </div>
@@ -673,9 +647,9 @@ export default function WithdrawalPage() {
               <div className="mb-6">
                 <p className="text-white/60 text-sm">
                   Min: <span className="text-white">
-                    {currency === 'cusd' ? '$1' : '₦1,000'}
+                    {currency === 'usdm' ? '$1' : '₦1,000'}
                   </span> | Max: <span className="text-white">
-                    {currency === 'cusd' ? '$100,000' : '₦5,000,000'}
+                    {currency === 'usdm' ? '$100,000' : '₦5,000,000'}
                   </span>
                 </p>
               </div>
@@ -759,7 +733,7 @@ export default function WithdrawalPage() {
                   !amount || (amount && amount.trim() === '') ||
                   withdrawalAmount === BigInt(0) ||
                   !hasSufficientBalance ||
-                  currency !== 'cusd' ||
+                  currency !== 'usdm' ||
                   (showRecipientInput && recipientAddress && recipientAddress.trim() !== '' && !/^0x[a-fA-F0-9]{40}$/.test(recipientAddress))
                 )}
                 className="w-full py-3 bg-[#2BA3FF] text-white rounded-lg font-semibold hover:bg-[#1a8fdb] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -780,7 +754,7 @@ export default function WithdrawalPage() {
                     <span>Withdrawal Successful</span>
                   </>
                 ) : (
-                  `Withdraw ${currency === 'cusd' ? 'cUSD' : 'NGN'}`
+                  `Withdraw ${currency === 'usdm' ? 'USDm' : 'NGN'}`
                 )}
               </button>
 

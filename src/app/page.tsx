@@ -10,7 +10,7 @@ import { useEffect, useState } from 'react'
 import { sdk } from '@farcaster/miniapp-sdk'
 
 function App() {
-  const [isSDKLoaded, setIsSDKLoaded] = useState(false);
+  const [isSDKLoaded, setIsSDKLoaded] = useState(false)
 
   useEffect(() => {
     const load = async () => {

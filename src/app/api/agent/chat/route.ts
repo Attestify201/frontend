@@ -1,7 +1,7 @@
 /**
  * POST /api/agent/chat
  * Body: { message: string, wallet_address?: string, conversation_id?: string }
- * Returns: { reply: string, transactionRequest?: { action: 'deposit' | 'withdraw', amount_cusd: number } }
+ * Returns: { reply: string, transactionRequest?: { action: 'deposit' | 'withdraw', amount_usdm: number } }
  *
  * Supports multiple providers via env (CHAT_PROVIDER=groq|openai|gemini|anthropic):
  * - GROQ_API_KEY → Groq (free tier, llama-3.3-70b-versatile)
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     pruneRateLimitStore()
 
     const history = getConversationHistory(conversationId)
-    let transactionRequest: { action: 'deposit' | 'withdraw'; amount_cusd: number } | null = null
+    let transactionRequest: { action: 'deposit' | 'withdraw'; amount_usdm: number } | null = null
     let lastText = ''
 
     const systemPrompt = walletAddress
@@ -171,7 +171,7 @@ export async function POST(request: Request) {
             const intent = buildTransactionIntent(name, args)
             if (intent) {
               transactionRequest = intent
-              result = JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_cusd: intent.amount_cusd })
+              result = JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_usdm: intent.amount_usdm })
             } else {
               result = JSON.stringify({ error: 'Invalid amount' })
             }
@@ -254,7 +254,7 @@ export async function POST(request: Request) {
               toolResults.push({
                 role: 'tool',
                 tool_call_id: tc.id!,
-                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_cusd: intent.amount_cusd }),
+                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_usdm: intent.amount_usdm }),
               })
             } else {
               toolResults.push({ role: 'tool', tool_call_id: tc.id!, content: JSON.stringify({ error: 'Invalid amount' }) })
@@ -339,7 +339,7 @@ export async function POST(request: Request) {
               toolResults.push({
                 role: 'tool',
                 tool_call_id: tc.id,
-                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_cusd: intent.amount_cusd }),
+                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_usdm: intent.amount_usdm }),
               })
             } else {
               toolResults.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify({ error: 'Invalid amount' }) })
@@ -423,7 +423,7 @@ export async function POST(request: Request) {
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: tool.id,
-                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_cusd: intent.amount_cusd }),
+                content: JSON.stringify({ status: 'transaction_sent_to_user_for_approval', action: intent.action, amount_usdm: intent.amount_usdm }),
               })
             } else {
               toolResults.push({
