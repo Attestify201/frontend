@@ -28,7 +28,7 @@ import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
 import Navbar from '../../components/navbar'
 
-// ERC20 ABI for cUSD token operations
+// ERC20 ABI for USDm token operations
 const ERC20_ABI = [
   {
     inputs: [{ name: 'account', type: 'address' }],
@@ -73,21 +73,28 @@ const isInMiniApp = (): boolean => {
   return window.self !== window.top || !!window.ReactNativeWebView
 }
 
+// Deposit limits (in USDm)
+const MIN_DEPOSIT_USDM = 1 // 1 USDm minimum
+const MAX_DEPOSIT_USDM = 100000 // 100,000 USDm maximum
+
+// Convert to wei (18 decimals)
+const MIN_DEPOSIT_WEI = parseUnits(MIN_DEPOSIT_USDM.toString(), 18)
+const MAX_DEPOSIT_WEI = parseUnits(MAX_DEPOSIT_USDM.toString(), 18)
+
 export default function DepositPage() {
   const router = useRouter()
-  const [selectedTab, setSelectedTab] = useState<'fiat' | 'cusd'>('cusd')
+  const [selectedTab, setSelectedTab] = useState<'fiat' | 'usdm'>('usdm')
   const [amount, setAmount] = useState('')
   const [balanceVisible, setBalanceVisible] = useState(true)
   const [balanceHidden, setBalanceHidden] = useState(false)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [txStatus, setTxStatus] = useState<'idle' | 'approving' | 'depositing' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { address, isConnected } = useAccount()
 
-  // Read user's cUSD balance
-  const { data: cusdBalance, refetch: refetchBalance } = useReadContract({
+  // Read user's USDm balance
+  const { data: usdmBalance, refetch: refetchBalance } = useReadContract({
     address: CUSD_ADDRESS as Address,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
@@ -101,7 +108,7 @@ export default function DepositPage() {
 
   // Read user's allowance for vault
   const depositAmount = useMemo(() => {
-    if (!amount || selectedTab !== 'cusd') return 0n
+    if (!amount || selectedTab !== 'usdm') return 0n
     try {
       return parseUnits(amount, 18)
     } catch {
@@ -277,56 +284,6 @@ export default function DepositPage() {
     return allowanceValue < depositAmount
   }, [allowance, depositAmount])
 
-
-  // Handle approval - approve max amount for better UX (user can deposit multiple times without re-approving)
-  const handleApprove = () => {
-    if (!address || !depositAmount || depositAmount === 0n) {
-      setErrorMessage('Please enter a valid amount')
-      return
-    }
-
-    setTxStatus('approving')
-    setErrorMessage('')
-    resetApprove() // Reset any previous errors
-
-    // Approve max uint256 for better UX (allows multiple deposits without re-approving)
-    // Alternatively, you could approve depositAmount * 2 or a large amount
-    const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
-    
-    approve({
-      address: CUSD_ADDRESS as Address,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [AttestifyVaultContract.address as Address, maxApproval],
-    })
-  }
-
-  // Handle deposit
-  const handleDeposit = () => {
-    if (!address || !depositAmount || depositAmount === 0n) {
-      setErrorMessage('Please enter a valid amount')
-      return
-    }
-
-    // Double-check allowance before depositing
-    if (needsApproval || (allowance !== undefined && allowance !== null && typeof allowance === 'bigint' && allowance < depositAmount)) {
-      setErrorMessage('Insufficient allowance. Please approve cUSD first.')
-      setTxStatus('idle')
-      return
-    }
-
-    setTxStatus('depositing')
-    setErrorMessage('')
-    resetDeposit() // Reset any previous errors
-
-    deposit({
-      address: AttestifyVaultContract.address as Address,
-      abi: AttestifyVaultContract.AttestifyVault,
-      functionName: 'deposit',
-      args: [depositAmount],
-    })
-  }
-
   // Format balance/amount for display (limit decimal places to prevent overflow)
   const formatAmount = (value: bigint | undefined) => {
     if (value === undefined || value === null) return '0.00'
@@ -348,10 +305,133 @@ export default function DepositPage() {
     }
   }
 
+  // Validate deposit amount
+  const validateDepositAmount = (): string | null => {
+    if (!depositAmount || depositAmount === 0n) {
+      return 'Please enter a deposit amount'
+    }
+
+    // Check minimum deposit
+    if (depositAmount < MIN_DEPOSIT_WEI) {
+      return `Minimum deposit is ${MIN_DEPOSIT_USDM} USDm. Please enter at least ${MIN_DEPOSIT_USDM} USDm.`
+    }
+
+    // Check maximum deposit
+    if (depositAmount > MAX_DEPOSIT_WEI) {
+      return `Maximum deposit is ${MAX_DEPOSIT_USDM.toLocaleString()} USDm. Please enter a smaller amount.`
+    }
+
+    // Check if user has sufficient balance
+    if (usdmBalance !== undefined && typeof usdmBalance === 'bigint') {
+      if (usdmBalance < depositAmount) {
+        const balanceFormatted = formatAmount(usdmBalance)
+        return `Insufficient balance. You have ${balanceFormatted} USDm, but trying to deposit ${formatAmount(depositAmount)} USDm.`
+      }
+    }
+
+    return null
+  }
+
+  // Real-time validation error message
+  const validationError = useMemo(() => {
+    if (!amount || depositAmount === 0n) return null
+    return validateDepositAmount()
+  }, [amount, depositAmount, usdmBalance])
+
+  // Handle Max button click - set amount to maximum available (wallet balance or max deposit limit, whichever is smaller)
+  const handleMaxClick = () => {
+    if (!isConnected || !usdmBalance || typeof usdmBalance !== 'bigint' || usdmBalance === 0n) {
+      return
+    }
+
+    // Get the maximum amount user can deposit (min of wallet balance and max deposit limit)
+    const maxDepositable = usdmBalance < MAX_DEPOSIT_WEI ? usdmBalance : MAX_DEPOSIT_WEI
+    
+    // Format the amount to a string with proper decimals
+    const formattedAmount = formatUnits(maxDepositable, 18)
+    // Remove trailing zeros
+    const cleanAmount = parseFloat(formattedAmount).toString()
+    
+    setAmount(cleanAmount)
+    setErrorMessage('')
+  }
+
+  // Handle approval - approve max amount for better UX (user can deposit multiple times without re-approving)
+  const handleApprove = () => {
+    if (!address) {
+      setErrorMessage('Please connect your wallet')
+      return
+    }
+
+    // Validate deposit amount before approving
+    const validationError = validateDepositAmount()
+    if (validationError) {
+      setErrorMessage(validationError)
+      setTxStatus('idle')
+      return
+    }
+
+    setTxStatus('approving')
+    setErrorMessage('')
+    resetApprove() // Reset any previous errors
+
+    // Approve max uint256 for better UX (allows multiple deposits without re-approving)
+    // Alternatively, you could approve depositAmount * 2 or a large amount
+    const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    
+    approve({
+      address: CUSD_ADDRESS as Address,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [AttestifyVaultContract.address as Address, maxApproval],
+    })
+  }
+
+  // Handle deposit
+  const handleDeposit = () => {
+    if (!address) {
+      setErrorMessage('Please connect your wallet')
+      return
+    }
+
+    // Validate deposit amount before depositing
+    const validationError = validateDepositAmount()
+    if (validationError) {
+      setErrorMessage(validationError)
+      setTxStatus('idle')
+      return
+    }
+
+    // Double-check allowance before depositing
+    if (needsApproval || (allowance !== undefined && allowance !== null && typeof allowance === 'bigint' && allowance < depositAmount)) {
+      setErrorMessage('Insufficient allowance. Please approve USDm first by clicking "Approve USDm".')
+      setTxStatus('idle')
+      return
+    }
+
+    setTxStatus('depositing')
+    setErrorMessage('')
+    resetDeposit() // Reset any previous errors
+
+    deposit({
+      address: AttestifyVaultContract.address as Address,
+      abi: AttestifyVaultContract.AttestifyVault,
+      functionName: 'deposit',
+      args: [depositAmount],
+    })
+  }
+
   // Handle proceed button click
   const handleProceed = () => {
     if (selectedTab === 'fiat') {
-      setErrorMessage('Fiat deposits are not yet available. Please use cUSD.')
+      setErrorMessage('Fiat deposits are not yet available. Please use USDm.')
+      return
+    }
+
+    // Validate before proceeding
+    const validationError = validateDepositAmount()
+    if (validationError) {
+      setErrorMessage(validationError)
       return
     }
 
@@ -421,25 +501,55 @@ export default function DepositPage() {
   useEffect(() => {
     if (approveError) {
       setTxStatus('error')
-      const errorMsg = approveError.message || 'Approval failed. Please check your wallet.'
+      let errorMsg = approveError.message || 'Approval failed. Please check your wallet.'
+      
+      // Parse and humanize common error messages
+      const errorMsgLower = errorMsg.toLowerCase()
+      
+      if (errorMsgLower.includes('user rejected') || errorMsgLower.includes('user denied')) {
+        errorMsg = 'Approval was cancelled. Please try again when ready.'
+      } else if (errorMsgLower.includes('insufficient balance')) {
+        errorMsg = 'Insufficient balance for gas fees. Please ensure you have enough funds.'
+        refetchBalance()
+      } else if (errorMsgLower.includes('network') || errorMsgLower.includes('connection')) {
+        errorMsg = 'Network error. Please check your connection and try again.'
+      }
+      
       setErrorMessage(errorMsg)
       // Reset after showing error
       setTimeout(() => {
         resetApprove()
       }, 100)
     }
-  }, [approveError, resetApprove])
+  }, [approveError, resetApprove, refetchBalance])
 
   useEffect(() => {
     if (depositError) {
       setTxStatus('error')
       let errorMsg = depositError.message || 'Deposit failed. Please check your wallet.'
       
-      // Check for specific allowance error
-      if (errorMsg.includes('insufficient allowance') || errorMsg.includes('allowance')) {
-        errorMsg = 'Insufficient allowance. Please approve cUSD first by clicking "Approve cUSD".'
-        // Refetch allowance to update the UI
+      // Parse and humanize common error messages
+      const errorMsgLower = errorMsg.toLowerCase()
+      
+      if (errorMsgLower.includes('insufficient allowance') || errorMsgLower.includes('allowance')) {
+        errorMsg = 'Insufficient allowance. Please approve USDm first by clicking "Approve USDm".'
         refetchAllowance()
+      } else if (errorMsgLower.includes('insufficient balance') || errorMsgLower.includes('balance')) {
+        errorMsg = 'Insufficient balance. Please check your wallet balance and try again.'
+        refetchBalance()
+      } else if (errorMsgLower.includes('user rejected') || errorMsgLower.includes('user denied')) {
+        errorMsg = 'Transaction was cancelled. Please try again when ready.'
+      } else if (errorMsgLower.includes('execution reverted')) {
+        // Try to extract more specific error
+        if (errorMsgLower.includes('min') || errorMsgLower.includes('minimum')) {
+          errorMsg = `Deposit amount is below the minimum. Minimum deposit is ${MIN_DEPOSIT_USDM} USDm.`
+        } else if (errorMsgLower.includes('max') || errorMsgLower.includes('maximum')) {
+          errorMsg = `Deposit amount exceeds the maximum. Maximum deposit is ${MAX_DEPOSIT_USDM.toLocaleString()} USDm.`
+        } else {
+          errorMsg = 'Transaction failed. Please check the amount and try again.'
+        }
+      } else if (errorMsgLower.includes('network') || errorMsgLower.includes('connection')) {
+        errorMsg = 'Network error. Please check your connection and try again.'
       }
       
       setErrorMessage(errorMsg)
@@ -448,19 +558,35 @@ export default function DepositPage() {
         resetDeposit()
       }, 100)
     }
-  }, [depositError, resetDeposit, refetchAllowance])
+  }, [depositError, resetDeposit, refetchAllowance, refetchBalance])
 
   useEffect(() => {
     if (approvalTxError) {
       setTxStatus('error')
-      setErrorMessage('Approval transaction failed. Please try again.')
+      let errorMsg = 'Approval transaction failed. Please try again.'
+      
+      const errorMsgLower = approvalTxError.message?.toLowerCase() || ''
+      if (errorMsgLower.includes('reverted') || errorMsgLower.includes('failed')) {
+        errorMsg = 'Approval transaction was reverted. Please check your balance and try again.'
+      }
+      
+      setErrorMessage(errorMsg)
     }
   }, [approvalTxError])
 
   useEffect(() => {
     if (depositTxError) {
       setTxStatus('error')
-      setErrorMessage('Deposit transaction failed. Please try again.')
+      let errorMsg = 'Deposit transaction failed. Please try again.'
+      
+      const errorMsgLower = depositTxError.message?.toLowerCase() || ''
+      if (errorMsgLower.includes('reverted') || errorMsgLower.includes('failed')) {
+        errorMsg = 'Deposit transaction was reverted. Please check the amount and your balance, then try again.'
+      } else if (errorMsgLower.includes('insufficient')) {
+        errorMsg = 'Insufficient balance or allowance. Please check and try again.'
+      }
+      
+      setErrorMessage(errorMsg)
     }
   }, [depositTxError])
 
@@ -607,35 +733,15 @@ export default function DepositPage() {
       <Navbar />
 
       <div className="flex">
-        {/* Mobile Hamburger Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="lg:hidden fixed top-20 left-4 z-50 p-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-white hover:bg-white/5 transition-colors"
-          aria-label="Toggle sidebar"
-        >
-          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
-
-        {/* Overlay for mobile */}
-        {sidebarOpen && (
-          <div
-            className="lg:hidden fixed inset-0 bg-black/50 z-40"
-            onClick={() => setSidebarOpen(false)}
-          />
-        )}
-
-        {/* Left Sidebar */}
+        {/* Left Sidebar - Hidden on mobile, visible on desktop */}
         <aside
-          className={`fixed lg:static inset-y-0 left-0 z-40 w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4 transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0 ${
-            sidebarOpen ? '!translate-x-0' : ''
-          }`}
+          className="hidden lg:block w-64 border-r border-white/10 min-h-[calc(100vh-64px)] p-4"
           style={{ backgroundColor: '#0E0E11' }}
         >
-          <nav className="space-y-2 pt-12 lg:pt-0">
+          <nav className="space-y-2">
             <Link 
               href="/dashboard" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <Home className="w-5 h-5" />
               <span>Home</span>
@@ -643,7 +749,6 @@ export default function DepositPage() {
             <Link 
               href="/ai-assistant" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <Brain className="w-5 h-5" />
               <span>AI Assistant</span>
@@ -651,7 +756,6 @@ export default function DepositPage() {
             <Link 
               href="/deposit" 
               className="flex items-center gap-3 px-4 py-3 bg-[#2BA3FF]/20 text-[#2BA3FF] rounded-lg font-medium"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowDownToLine className="w-5 h-5" />
               <span>Deposit</span>
@@ -659,7 +763,6 @@ export default function DepositPage() {
             <Link 
               href="/withdrawal" 
               className="flex items-center gap-3 px-4 py-3 text-white/70 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              onClick={() => setSidebarOpen(false)}
             >
               <ArrowUpFromLine className="w-5 h-5" />
               <span>Withdrawal</span>
@@ -708,7 +811,7 @@ export default function DepositPage() {
                   <div className="flex gap-2 mb-6">
                     <button
                       onClick={() => setSelectedTab('fiat')}
-                      className={`flex items-center gap-2 px-6 py-2 rounded-lg font-semibold transition-colors ${
+                      className={`flex items-center gap-2 px-6 py-2 rounded-lg font-semibold transition-colors relative ${
                         selectedTab === 'fiat'
                           ? 'bg-[#2BA3FF] text-white border border-[#2BA3FF]'
                           : 'bg-white/5 text-white/70 hover:bg-white/10 border border-transparent'
@@ -716,48 +819,78 @@ export default function DepositPage() {
                     >
                       <DollarSign className="w-4 h-4" />
                       Fiat
+                      <span className="ml-1 px-1.5 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">
+                        Coming Soon
+                      </span>
                     </button>
                     <button
-                      onClick={() => setSelectedTab('cusd')}
+                      onClick={() => setSelectedTab('usdm')}
                       className={`flex items-center gap-2 px-6 py-2 rounded-lg font-semibold transition-colors ${
-                        selectedTab === 'cusd'
+                        selectedTab === 'usdm'
                           ? 'bg-[#2BA3FF] text-white border border-[#2BA3FF]'
                           : 'bg-white/5 text-white/70 hover:bg-white/10 border border-transparent'
                       }`}
                     >
                       <Coins className="w-4 h-4" />
-                      cUSD
+                      USDm
                     </button>
                   </div>
 
                   {/* Amount Input */}
                   <div className="mb-6">
                     <label className="block text-white/70 text-sm mb-2">Amount</label>
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-lg">
-                        {selectedTab === 'fiat' ? '₦' : '$'}
-                      </span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={amount}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          // Allow empty, numbers, and one decimal point
-                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                            setAmount(value)
-                            setErrorMessage('')
-                          }
-                        }}
-                        placeholder={selectedTab === 'fiat' ? 'Enter amount in NGN' : 'Enter amount in cUSD'}
-                        className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors"
-                        disabled={!isConnected || txStatus === 'approving' || txStatus === 'depositing'}
-                      />
-                    </div>
+                    {selectedTab === 'fiat' ? (
+                      <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                        <p className="text-yellow-400 text-sm flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4" />
+                          Fiat offramping is coming soon! Please use USDm for now.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-lg">
+                          $
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={amount}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            // Allow empty, numbers, and one decimal point
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setAmount(value)
+                              setErrorMessage('')
+                            }
+                          }}
+                          placeholder="Enter amount in USDm"
+                          className="w-full pl-10 pr-20 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors"
+                          disabled={!isConnected || txStatus === 'approving' || txStatus === 'depositing'}
+                        />
+                        {/* Max Button - Only show for USDm tab */}
+                        {selectedTab === 'usdm' && isConnected && usdmBalance !== undefined && typeof usdmBalance === 'bigint' && usdmBalance > 0n && (
+                          <button
+                            type="button"
+                            onClick={handleMaxClick}
+                            disabled={txStatus === 'approving' || txStatus === 'depositing'}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-[#2BA3FF] hover:text-[#1a8fdb] bg-[#2BA3FF]/10 hover:bg-[#2BA3FF]/20 border border-[#2BA3FF]/30 hover:border-[#2BA3FF]/50 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Max
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {amount && depositAmount > BigInt(0) && (
                       <p className="text-xs text-white/50 mt-1">
-                        ≈ {formatAmount(depositAmount)} cUSD
+                        ≈ {formatAmount(depositAmount)} USDm
+                      </p>
+                    )}
+                    {/* Real-time validation feedback */}
+                    {validationError && (
+                      <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {validationError}
                       </p>
                     )}
                   </div>
@@ -768,13 +901,13 @@ export default function DepositPage() {
                       Deposit Range: <span className="text-white">
                         {selectedTab === 'fiat' 
                           ? 'Min: ₦1,000 | Max: ₦5,000,000'
-                          : 'Min: 1 cUSD | Max: 100,000 cUSD'
+                          : 'Min: 1 USDm | Max: 100,000 USDm'
                         }
                       </span>
                     </p>
-                    {selectedTab === 'cusd' && isConnected && cusdBalance !== undefined && (
+                    {selectedTab === 'usdm' && isConnected && usdmBalance !== undefined && (
                       <p className="text-white/50 text-xs mt-1">
-                        Available: {formatAmount(cusdBalance)} cUSD
+                        Available: {formatAmount(usdmBalance)} USDm
                       </p>
                     )}
                   </div>
@@ -806,22 +939,22 @@ export default function DepositPage() {
                   {/* Balance Display - Always show when connected */}
                   {isConnected && (
                     <div className="mb-4">
-                      {cusdBalance === undefined ? (
+                      {usdmBalance === undefined ? (
                         <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-2">
                           <Loader2 className="w-5 h-5 text-yellow-400 flex-shrink-0 animate-spin" />
                           <p className="text-yellow-400 text-sm">Loading balance...</p>
                         </div>
-                      ) : depositAmount > BigInt(0) && cusdBalance < depositAmount ? (
+                      ) : depositAmount > BigInt(0) && usdmBalance < depositAmount ? (
                         <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-2">
                           <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
                           <p className="text-red-400 text-sm break-words">
-                            Insufficient balance. You have {formatAmount(cusdBalance)} cUSD
+                            Insufficient balance. You have {formatAmount(usdmBalance)} USDm
                           </p>
                         </div>
                       ) : (
                         <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                           <p className="text-blue-400 text-sm break-words">
-                            Wallet Balance: {formatAmount(cusdBalance)} cUSD
+                            Wallet Balance: {formatAmount(usdmBalance)} USDm
                           </p>
                         </div>
                       )}
@@ -833,9 +966,9 @@ export default function DepositPage() {
                     <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                       <p className="text-blue-400 text-sm break-words">
                         {needsApproval ? (
-                          <>⚠️ Approval needed: {formatAmount(allowance as bigint)} cUSD approved, need {formatAmount(depositAmount)} cUSD</>
+                          <>⚠️ Approval needed: {formatAmount(allowance as bigint)} USDm approved, need {formatAmount(depositAmount)} USDm</>
                         ) : (
-                          <>✅ Sufficient allowance: {formatAmount(allowance as bigint)} cUSD approved</>
+                          <>✅ Sufficient allowance: {formatAmount(allowance as bigint)} USDm approved</>
                         )}
                       </p>
                     </div>
@@ -848,7 +981,7 @@ export default function DepositPage() {
                       !isConnected ||
                       !amount ||
                       depositAmount === BigInt(0) ||
-                      (cusdBalance !== undefined && typeof cusdBalance === 'bigint' && cusdBalance < depositAmount) ||
+                      (usdmBalance !== undefined && typeof usdmBalance === 'bigint' && usdmBalance < depositAmount) ||
                       txStatus === 'approving' ||
                       txStatus === 'depositing' ||
                       isWaitingApproval ||
@@ -868,7 +1001,7 @@ export default function DepositPage() {
                       </>
                     ) : needsApproval ? (
                       <>
-                        Approve cUSD
+                        Approve USDm
                         <AlertCircle className="w-4 h-4" />
                       </>
                     ) : (

@@ -23,11 +23,6 @@ export default function DashboardPage() {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
   const [balanceVisible, setBalanceVisible] = useState(true)
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; value: number; label: string; date: Date } | null>(null)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
   // Get connected wallet address from Farcaster
   // Note: Farcaster connector provides the Farcaster wallet address
   const { address, isConnected } = useAccount()
@@ -58,7 +53,7 @@ export default function DashboardPage() {
     },
   ] as const
 
-  // Read user's wallet cUSD balance
+  // Read user's wallet USDm balance
   const { 
     data: walletBalance,
     isLoading: isLoadingWalletBalance,
@@ -430,7 +425,7 @@ export default function DashboardPage() {
                     {isLoadingBalance
                       ? 'Calculating...'
                       : dailyEarnings !== null
-                      ? `+${dailyEarnings.toFixed(6)} cUSD/day`
+                      ? `+${dailyEarnings.toFixed(6)} USDm/day`
                       : isConnected
                       ? '$0.00/day'
                       : 'Connect wallet to see earnings'}
@@ -440,8 +435,8 @@ export default function DashboardPage() {
                       Wallet: {isLoadingWalletBalance 
                         ? 'Loading...' 
                         : walletBalance !== undefined && walletBalance !== null && typeof walletBalance === 'bigint'
-                        ? `${formatUnits(walletBalance, 18)} cUSD`
-                        : '0.00 cUSD'}
+                        ? `${formatUnits(walletBalance, 18)} USDm`
+                        : '0.00 USDm'}
                     </p>
                   )}
                 </>
@@ -770,7 +765,7 @@ export default function DashboardPage() {
                     }}
                   >
                     <div className="text-white text-sm font-semibold mb-1">
-                      ${hoveredPoint.value.toFixed(6)} cUSD
+                      ${hoveredPoint.value.toFixed(6)} USDm
                     </div>
                     <div className="text-white/60 text-xs">
                       {hoveredPoint.label}

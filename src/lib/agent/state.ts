@@ -8,7 +8,7 @@ export type AgentMessage = {
   role: 'user' | 'assistant'
   content: string
   /** If present, the assistant response included a transaction request for the frontend */
-  transactionRequest?: { action: 'deposit' | 'withdraw'; amount_cusd: number }
+  transactionRequest?: { action: 'deposit' | 'withdraw'; amount_usdm: number }
 }
 
 const conversations = new Map<string, AgentMessage[]>()

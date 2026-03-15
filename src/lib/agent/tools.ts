@@ -9,17 +9,17 @@ export const AGENT_SYSTEM_PROMPT = `You are the LiquiFi AI Yield Advisor. You he
 
 - Be concise and friendly. Use the provided tools to get real data.
 - For balance/history/APY questions, use the read tools and summarize the results clearly.
-- For deposit or withdraw requests, use the deposit or withdraw tool with the amount in cUSD. The user will then approve the transaction in their wallet; you never execute transactions yourself.
-- Amounts are always in cUSD (18 decimals). When the user says "$100" or "100 cUSD", use amount 100.
+- For deposit or withdraw requests, use the deposit or withdraw tool with the amount in USDm. The user will then approve the transaction in their wallet; you never execute transactions yourself.
+- Amounts are always in USDm (18 decimals). When the user says "$100" or "100 USDm", use amount 100.
 - If the user's wallet address is not provided, ask them to connect their wallet first.
-- For general DeFi or vault strategy questions, answer from knowledge: the vault uses Aave V3 on Celo to earn yield on cUSD; APY varies with market conditions.
+- For general DeFi or vault strategy questions, answer from knowledge: the vault uses Aave V3 on Celo to earn yield on USDm; APY varies with market conditions.
 - When using tools, use only the API's structured function-call format; do not output tool names or arguments as raw text or inside angle brackets like <function=...>.`
 
 /** Claude tool definitions (function calling schema) */
 export const agentTools: Tool[] = [
   {
     name: 'get_vault_balance',
-    description: 'Get the user\'s vault balance in cUSD (amount deposited in the LiquiFi vault).',
+    description: 'Get the user\'s vault balance in USDm (amount deposited in the LiquiFi vault).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -30,7 +30,7 @@ export const agentTools: Tool[] = [
   },
   {
     name: 'get_wallet_balance',
-    description: 'Get the user\'s wallet cUSD balance (not yet deposited in the vault).',
+    description: 'Get the user\'s wallet USDm balance (not yet deposited in the vault).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -72,24 +72,24 @@ export const agentTools: Tool[] = [
   },
   {
     name: 'deposit',
-    description: 'Initiate a deposit of cUSD into the vault. Call this when the user wants to deposit. The user must approve the transaction in their wallet; you only request the action with an amount in cUSD.',
+    description: 'Initiate a deposit of USDm into the vault. Call this when the user wants to deposit. The user must approve the transaction in their wallet; you only request the action with an amount in USDm.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        amount_cusd: { type: 'number', description: 'Amount to deposit in cUSD (e.g. 100 for $100)' },
+        amount_usdm: { type: 'number', description: 'Amount to deposit in USDm (e.g. 100 for $100)' },
       },
-      required: ['amount_cusd'],
+      required: ['amount_usdm'],
     },
   },
   {
     name: 'withdraw',
-    description: 'Initiate a withdrawal of cUSD from the vault to the user\'s wallet. The user must approve the transaction in their wallet.',
+    description: 'Initiate a withdrawal of USDm from the vault to the user\'s wallet. The user must approve the transaction in their wallet.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        amount_cusd: { type: 'number', description: 'Amount to withdraw in cUSD (e.g. 50 for $50)' },
+        amount_usdm: { type: 'number', description: 'Amount to withdraw in USDm (e.g. 50 for $50)' },
       },
-      required: ['amount_cusd'],
+      required: ['amount_usdm'],
     },
   },
 ]

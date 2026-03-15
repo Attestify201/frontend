@@ -49,7 +49,7 @@ export async function executeReadTool(
         args: [user as Address],
       })
       const formatted = formatUnits(balance, 18)
-      return JSON.stringify({ vault_balance_cusd: formatted, raw: balance.toString() })
+      return JSON.stringify({ vault_balance_usdm: formatted, raw: balance.toString() })
     }
     case 'get_wallet_balance': {
       const user = args.user_address as string
@@ -61,7 +61,7 @@ export async function executeReadTool(
         args: [user as Address],
       })
       const formatted = formatUnits(balance, 18)
-      return JSON.stringify({ wallet_balance_cusd: formatted, raw: balance.toString() })
+      return JSON.stringify({ wallet_balance_usdm: formatted, raw: balance.toString() })
     }
     case 'get_transaction_history': {
       const user = (args.user_address as string)?.toLowerCase()
@@ -121,7 +121,7 @@ export async function executeReadTool(
         args: [user as Address],
       })
       const formatted = formatUnits(balance, 18)
-      return JSON.stringify({ total_vault_balance_cusd: formatted, raw: balance.toString() })
+      return JSON.stringify({ total_vault_balance_usdm: formatted, raw: balance.toString() })
     }
     default:
       return JSON.stringify({ error: `Unknown read tool: ${name}` })
@@ -137,16 +137,16 @@ export function isWriteTool(name: string): boolean {
 export function buildTransactionIntent(
   name: string,
   args: Record<string, unknown>
-): { action: 'deposit' | 'withdraw'; amount_cusd: number } | null {
+): { action: 'deposit' | 'withdraw'; amount_usdm: number } | null {
   if (name === 'deposit') {
-    const amount = Number(args.amount_cusd)
+    const amount = Number(args.amount_usdm)
     if (!Number.isFinite(amount) || amount <= 0) return null
-    return { action: 'deposit', amount_cusd: amount }
+    return { action: 'deposit', amount_usdm: amount }
   }
   if (name === 'withdraw') {
-    const amount = Number(args.amount_cusd)
+    const amount = Number(args.amount_usdm)
     if (!Number.isFinite(amount) || amount <= 0) return null
-    return { action: 'withdraw', amount_cusd: amount }
+    return { action: 'withdraw', amount_usdm: amount }
   }
   return null
 }

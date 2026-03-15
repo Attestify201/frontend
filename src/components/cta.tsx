@@ -14,7 +14,7 @@ export default function CTASection() {
   return (
     <section
       ref={ref}
-      className="py-24 relative overflow-hidden"
+      className="py-16 sm:py-20 md:py-24 relative overflow-hidden"
       style={{ backgroundColor: '#141414' }}
     >
       {/* Background image with multiply blend mode - exact design from Figma */}
@@ -45,7 +45,7 @@ export default function CTASection() {
             initial={{ opacity: 0, y: 30 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8, delay: 0.4 }}
-            className="text-4xl md:text-5xl font-bold text-white mb-6"
+            className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 sm:mb-6 px-2 sm:px-0"
           >
             Ready to Start Earning?
           </motion.h2>
@@ -54,7 +54,7 @@ export default function CTASection() {
             initial={{ opacity: 0, y: 20 }}
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6, delay: 0.6 }}
-            className="text-xl text-white mb-8 max-w-2xl mx-auto"
+            className="text-base sm:text-lg md:text-xl text-white mb-6 sm:mb-8 max-w-2xl mx-auto px-4 sm:px-0"
           >
             Join users earning passive income with AI-powered guidance
           </motion.p>
@@ -71,7 +71,7 @@ export default function CTASection() {
                 boxShadow: '0 20px 40px rgba(255,255,255,0.3)',
               }}
               whileTap={{ scale: 0.95 }}
-              className="group px-8 py-4 bg-white border border-gray-200 text-black rounded-xl font-semibold shadow-lg hover:shadow-2xl transition-all duration-300 inline-flex items-center gap-2 relative overflow-hidden"
+              className="group px-6 sm:px-8 py-3 sm:py-4 bg-white border border-gray-200 text-black rounded-xl font-semibold shadow-lg hover:shadow-2xl transition-all duration-300 inline-flex items-center gap-2 relative overflow-hidden text-sm sm:text-base"
             >
               <motion.div
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-black/5 to-transparent"
