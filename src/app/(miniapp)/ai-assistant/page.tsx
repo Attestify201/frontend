@@ -160,16 +160,48 @@ export default function AIAssistantPage() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [conversationId] = useState(() => `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`)
+  const [conversationId] = useState(() => {
+    const storageKey = 'agent_conversation_id'
+    try {
+      if (typeof window !== 'undefined') {
+        const existing = window.localStorage.getItem(storageKey)
+        if (existing) return existing
+        const id = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+        window.localStorage.setItem(storageKey, id)
+        return id
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return `conv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  })
   const [transactionStatus, setTransactionStatus] = useState<TransactionStatus | null>(null)
   const [approveHash, setApproveHash] = useState<`0x${string}` | undefined>()
   const [vaultHash, setVaultHash] = useState<`0x${string}` | undefined>()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const hasUserInteracted = useRef(false)
+  const [lastUserMessage, setLastUserMessage] = useState<string>('')
   // When agent requests a tx without specifying asset, we stage a draft until user picks the asset
   const [txDraft, setTxDraft] = useState<{ action: 'deposit' | 'withdraw'; amount: number } | null>(null)
-  
+  // Infer asset from user text when backend omitted asset but user specified it
+  const inferAssetFromText = (text: string): 'USDC' | 'USDT' | 'CUSD' | undefined => {
+    try {
+      const lower = text.toLowerCase()
+      if (/(usdc)/.test(lower)) return 'USDC'
+      if (/(usdt)/.test(lower)) return 'USDT'
+      if (/(usdm|\bcusd\b|c\s*usd|c-usd)/.test(lower)) return 'CUSD'
+    } catch {}
+    return undefined
+  }
+  const inferAmountFromText = (text: string): number | undefined => {
+    try {
+      const m = text.toLowerCase().match(/(?:\$?\s*)(\d+(?:\.\d+)?)/)
+      return m ? Number(m[1]) : undefined
+    } catch {
+      return undefined
+    }
+  }
   // SelfClaw trust verification
   const [trustData, setTrustData] = useState<{
     configured: boolean
@@ -467,6 +499,20 @@ export default function AIAssistantPage() {
     setTimeout(() => {
       setTransactionStatus(null)
     }, 5000)
+
+    // Best-effort feedback to agent backend
+    try {
+      await fetch('/api/agent/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tx_hash: txHash,
+          success: true,
+        }),
+      })
+    } catch {
+      // ignore feedback errors
+    }
   }
 
   const handleSendMessage = async () => {
@@ -495,6 +541,7 @@ export default function AIAssistantPage() {
 
     setMessages((prev) => [...prev, userMessage])
     const messageContent = input.trim()
+    setLastUserMessage(messageContent)
     setInput('')
     setIsLoading(true)
 
@@ -517,6 +564,25 @@ export default function AIAssistantPage() {
 
       const data = await response.json()
       const missingAsset = !!(data.transactionRequest && !data.transactionRequest.asset)
+
+      // If backend omitted asset but the user's message clearly includes it, proceed immediately
+      if (missingAsset) {
+        const inferredAsset = inferAssetFromText(messageContent)
+        const inferredAmount = data.transactionRequest?.amount ?? inferAmountFromText(messageContent)
+        if (inferredAsset && typeof inferredAmount === 'number') {
+          const nextAsset = inferredAsset
+          setTxAsset(nextAsset)
+          setTxAssetLabel(nextAsset === 'CUSD' ? 'USDm' : nextAsset)
+          setTxDecimals(nextAsset === 'USDC' || nextAsset === 'USDT' ? 6 : 18)
+          setTransactionStatus({
+            type: data.transactionRequest!.action,
+            amount: inferredAmount,
+            status: 'pending',
+          })
+          return
+        }
+      }
+
       const assistantContent = missingAsset
         ? 'Which asset would you like to use for this transaction? Please select USDm, USDC, or USDT.'
         : (data.reply || 'I couldn\'t generate a response. Please try again.')
@@ -535,10 +601,12 @@ export default function AIAssistantPage() {
       if (data.transactionRequest) {
         const { action, amount, asset, asset_label } = data.transactionRequest
         if (!asset) {
-          // Stage draft and wait for user asset selection (quick chips shown below input)
+          // Stage draft and show quick chips; user picks the asset in UI
           setTxDraft({ action, amount })
         } else {
-          const nextAsset = asset as 'USDC' | 'USDT' | 'CUSD'
+          // Normalize asset string from backend: cusd|usdc|usdt or uppercase
+          const normalized = String(asset).toLowerCase()
+          const nextAsset = normalized === 'usdc' ? 'USDC' : normalized === 'usdt' ? 'USDT' : 'CUSD'
           setTxAsset(nextAsset)
           setTxAssetLabel(asset_label || (nextAsset === 'CUSD' ? 'USDm' : nextAsset))
           setTxDecimals(nextAsset === 'USDC' || nextAsset === 'USDT' ? 6 : 18)
@@ -554,7 +622,10 @@ export default function AIAssistantPage() {
         ...prev,
         {
           role: 'assistant',
-          content: `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+          content:
+            process.env.NODE_ENV !== 'production'
+              ? `Sorry, I encountered an error: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
+              : 'Sorry, something went wrong. Please try again.',
           timestamp: new Date(),
         },
       ])
@@ -902,7 +973,13 @@ export default function AIAssistantPage() {
               {txDraft && (
                 <div className="flex items-center justify-between gap-3 bg-white/5 border border-white/10 rounded-lg p-3">
                   <div className="text-white/80 text-sm">
-                    Select asset for {txDraft.action}: ${typeof txDraft.amount === 'number' ? txDraft.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '0.00'}
+                    {(() => {
+                      const amt = typeof txDraft.amount === 'number' ? txDraft.amount : inferAmountFromText(lastUserMessage)
+                      const amtStr = typeof amt === 'number'
+                        ? amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+                        : '0.00'
+                      return <>Select asset for {txDraft.action}: ${amtStr}</>
+                    })()}
                   </div>
                   <div className="flex items-center gap-2">
                     {(['CUSD','USDC','USDT'] as const).map(sym => (
@@ -914,9 +991,10 @@ export default function AIAssistantPage() {
                           setTxAssetLabel(nextAsset === 'CUSD' ? 'USDm' : nextAsset)
                           setTxDecimals(nextAsset === 'USDC' || nextAsset === 'USDT' ? 6 : 18)
                           // promote draft to active pending transaction
+                          const amt = typeof txDraft.amount === 'number' ? txDraft.amount : inferAmountFromText(lastUserMessage) || 0
                           setTransactionStatus({
                             type: txDraft.action,
-                            amount: txDraft.amount,
+                            amount: amt,
                             status: 'pending',
                           })
                           setTxDraft(null)
