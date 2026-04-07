@@ -712,11 +712,7 @@ export default function AIAssistantPage() {
                       </div>
                     )}
                   </div>
-                  <p className="text-white/60 text-sm sm:text-base">
-                    {isConnected && address
-                      ? `Connected: ${address.slice(0, 6)}...${address.slice(-4)}`
-                      : 'Connect your wallet to get started'}
-                  </p>
+                  {/* Hide wallet address banner in production UI */}
                 </div>
                   </div>
                 </div>
