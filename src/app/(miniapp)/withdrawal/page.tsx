@@ -23,7 +23,7 @@ import { useRouter } from 'next/navigation'
 import { sdk } from '@farcaster/miniapp-sdk'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseUnits, formatUnits, type Address } from 'viem'
-import { AttestifyVaultContract, CUSD_ADDRESS } from '../../abi'
+import { AttestifyVaultContract, REGISTRY_ADDRESS, REGISTRY_ABI, TOKENS } from '../../abi'
 import { useQuery } from '@apollo/client/react'
 import { gql } from '@apollo/client'
 import OffRampForm from '../../../components/offramp-form'
@@ -60,6 +60,7 @@ export default function WithdrawalPage() {
   const router = useRouter()
   const [amount, setAmount] = useState('')
   const [currency, setCurrency] = useState<'usdm' | 'ngn'>('usdm')
+  const [selectedAsset, setSelectedAsset] = useState<'USDC' | 'USDT' | 'USDM'>('USDC')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [isSDKLoaded, setIsSDKLoaded] = useState(false)
@@ -70,6 +71,20 @@ export default function WithdrawalPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { address, isConnected } = useAccount()
+  const selectedTokenAddress = TOKENS[selectedAsset].address as Address
+  const selectedTokenDecimals = TOKENS[selectedAsset].decimals
+  const selectedSymbol = TOKENS[selectedAsset].symbol
+  const { data: resolvedVaultRaw } = useReadContract({
+    address: REGISTRY_ADDRESS as Address,
+    abi: REGISTRY_ABI,
+    functionName: 'getVault',
+    args: [selectedTokenAddress],
+    query: { enabled: currency === 'usdm', refetchInterval: 15000 },
+  })
+  const resolvedVault: Address = useMemo(() => {
+    const addr = typeof resolvedVaultRaw === 'string' ? (resolvedVaultRaw as Address) : undefined
+    return addr && !/^0x0{40}$/i.test(addr) ? addr : (AttestifyVaultContract.address as Address)
+  }, [resolvedVaultRaw])
 
   // Read user's vault balance (how much they can withdraw)
   const { 
@@ -77,7 +92,7 @@ export default function WithdrawalPage() {
     isLoading: isLoadingVaultBalance,
     refetch: refetchVaultBalance 
   } = useReadContract({
-    address: AttestifyVaultContract.address as Address,
+    address: resolvedVault,
     abi: AttestifyVaultContract.AttestifyVault,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
@@ -87,12 +102,12 @@ export default function WithdrawalPage() {
     },
   })
 
-  // Read user's wallet USDm balance
+  // Read user's wallet balance for selected token
   const { 
     data: walletBalance, 
     refetch: refetchWalletBalance 
   } = useReadContract({
-    address: CUSD_ADDRESS as Address,
+    address: selectedTokenAddress,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
@@ -106,16 +121,20 @@ export default function WithdrawalPage() {
   const withdrawalAmount = useMemo(() => {
     if (!amount || currency !== 'usdm') return BigInt(0)
     try {
-      return parseUnits(amount, 18)
+      return parseUnits(amount, selectedTokenDecimals)
     } catch {
       return BigInt(0)
     }
-  }, [amount, currency])
+  }, [amount, currency, selectedTokenDecimals])
 
   // Check if user has sufficient balance
   const hasSufficientBalance = useMemo(() => {
     if (!userVaultBalance || !withdrawalAmount) return false
     return typeof userVaultBalance === 'bigint' && userVaultBalance >= withdrawalAmount
+  }, [userVaultBalance, withdrawalAmount])
+  const exceedsBalance = useMemo(() => {
+    if (!userVaultBalance || !withdrawalAmount) return false
+    return typeof userVaultBalance === 'bigint' && withdrawalAmount > userVaultBalance
   }, [userVaultBalance, withdrawalAmount])
 
   // Write contract hooks
@@ -214,7 +233,7 @@ export default function WithdrawalPage() {
 
         // Transfer the withdrawn amount to the recipient address
         transfer({
-          address: CUSD_ADDRESS as Address,
+          address: selectedTokenAddress,
           abi: ERC20_ABI,
           functionName: 'transfer',
           args: [recipientAddress.trim() as Address, withdrawalAmount],
@@ -358,11 +377,6 @@ export default function WithdrawalPage() {
       return
     }
 
-    if (currency !== 'usdm') {
-      setErrorMessage('Only USDm withdrawals are currently supported.')
-      return
-    }
-
     if (!amount || withdrawalAmount === BigInt(0)) {
       setErrorMessage('Please enter a valid amount.')
       return
@@ -379,7 +393,7 @@ export default function WithdrawalPage() {
     // Use withdraw function with slippage protection (minAssetsOut parameter)
     // This prevents the transaction from failing due to slippage
     withdraw({
-      address: AttestifyVaultContract.address as Address,
+      address: resolvedVault,
       abi: AttestifyVaultContract.AttestifyVault,
       functionName: 'withdraw',
       args: [withdrawalAmount, minAssetsOut],
@@ -390,7 +404,7 @@ export default function WithdrawalPage() {
   const formatBalance = (balance: bigint | undefined) => {
     if (balance === undefined || balance === null) return '0.000000'
     try {
-      const formatted = formatUnits(balance, 18)
+      const formatted = formatUnits(balance, selectedTokenDecimals)
       const num = parseFloat(formatted)
       
       // For very large numbers, use fewer decimal places
@@ -413,7 +427,7 @@ export default function WithdrawalPage() {
   const handleMaxClick = () => {
     if (userVaultBalance !== undefined && userVaultBalance !== null && typeof userVaultBalance === 'bigint' && userVaultBalance > BigInt(0)) {
       // Use formatUnits directly to get full precision, then format for display
-      const fullAmount = formatUnits(userVaultBalance, 18)
+      const fullAmount = formatUnits(userVaultBalance, selectedTokenDecimals)
       // Remove trailing zeros but keep decimals
       const trimmed = fullAmount.replace(/\.?0+$/, '')
       setAmount(trimmed)
@@ -441,6 +455,16 @@ export default function WithdrawalPage() {
   const availableBalance = userVaultBalance && typeof userVaultBalance === 'bigint' 
     ? formatBalance(userVaultBalance) 
     : '0.000000'
+  const disabledReason = useMemo(() => {
+    if (!isConnected) return 'Please connect your wallet to withdraw.'
+    if (!amount || (amount && amount.trim() === '')) return 'Enter an amount to withdraw.'
+    if (withdrawalAmount === BigInt(0)) return 'Enter a valid amount.'
+    if (!hasSufficientBalance) return `Insufficient vault balance. Available: ${availableBalance} ${selectedSymbol}`
+    if (showRecipientInput && recipientAddress && recipientAddress.trim() !== '' && !/^0x[a-fA-F0-9]{40}$/.test(recipientAddress)) {
+      return 'Invalid recipient address.'
+    }
+    return ''
+  }, [isConnected, amount, withdrawalAmount, hasSufficientBalance, availableBalance, selectedSymbol, showRecipientInput, recipientAddress])
 
   return (
     <div style={{ backgroundColor: '#0E0E11', minHeight: '100vh' }}>
@@ -525,7 +549,7 @@ export default function WithdrawalPage() {
                       {currency === 'usdm' ? (
                         <>
                           <DollarSign className="w-4 h-4" />
-                          <span>USDm</span>
+                          <span>Token</span>
                         </>
                       ) : (
                         <>
@@ -548,7 +572,7 @@ export default function WithdrawalPage() {
                         }`}
                       >
                         <DollarSign className="w-4 h-4" />
-                        <span>USDm</span>
+                        <span>Token</span>
                       </button>
                       <button
                         onClick={() => {
@@ -572,6 +596,24 @@ export default function WithdrawalPage() {
                 <OffRampForm />
               ) : (
                 <>
+                  {/* Asset Selector */}
+                  <div className="mb-4">
+                    <label className="block text-white/70 text-sm mb-2">Asset</label>
+                    <div className="flex items-center gap-2">
+                      {(['USDC','USDT','USDM'] as const).map(sym => (
+                        <button
+                          key={sym}
+                          onClick={() => setSelectedAsset(sym)}
+                          className={`px-3 py-2 rounded-md border transition-colors text-sm ${
+                            selectedAsset === sym ? 'border-[#2BA3FF] text-white bg-[#2BA3FF]/10' : 'border-white/10 text-white/80 hover:bg-white/5'
+                          }`}
+                        >
+                          {sym === 'USDM' ? 'USDm' : sym}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Amount Input */}
                   <div className="mb-6">
                     <label className="block text-white/70 text-sm mb-2">Amount</label>
@@ -591,7 +633,7 @@ export default function WithdrawalPage() {
                             setErrorMessage('')
                           }
                         }}
-                        placeholder="Enter amount in USDm"
+                        placeholder={`Enter amount in ${selectedSymbol}`}
                         className="w-full pl-10 pr-20 py-3 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-[#2BA3FF] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={!isConnected || txStatus === 'withdrawing' || txStatus === 'transferring'}
                       />
@@ -608,7 +650,15 @@ export default function WithdrawalPage() {
                     </div>
                     {amount && withdrawalAmount > BigInt(0) && (
                       <p className="text-xs text-white/50 mt-1">
-                        ≈ {formatBalance(withdrawalAmount)} USDm
+                        ≈ {formatBalance(withdrawalAmount)} {selectedSymbol}
+                      </p>
+                    )}
+                    <p className={`text-xs mt-1 ${availableBalance === '0.000000' ? 'text-red-400' : 'text-white/50'}`}>
+                      Available: {availableBalance} {selectedSymbol}
+                    </p>
+                    {exceedsBalance && (
+                      <p className="text-xs text-red-400 mt-1">
+                        Amount exceeds available vault balance. Available: {availableBalance} {selectedSymbol}
                       </p>
                     )}
                   </div>
@@ -622,7 +672,7 @@ export default function WithdrawalPage() {
                 </>
               )}
 
-              {/* Optional: Withdraw to External Address - Only for USDm */}
+              {/* Optional: Withdraw to External Address (token withdrawals) */}
               {currency === 'usdm' && (
                 <>
                   <div className="mb-6">
@@ -723,9 +773,20 @@ export default function WithdrawalPage() {
                         <span>Withdrawal Successful</span>
                       </>
                     ) : (
-                      'Withdraw USDm'
+                      `Withdraw ${selectedSymbol}`
                     )}
                   </button>
+                  {Boolean(
+                    !isConnected ||
+                    txStatus === 'withdrawing' ||
+                    txStatus === 'transferring' ||
+                    !amount || (amount && amount.trim() === '') ||
+                    withdrawalAmount === BigInt(0) ||
+                    !hasSufficientBalance ||
+                    (showRecipientInput && recipientAddress && recipientAddress.trim() !== '' && !/^0x[a-fA-F0-9]{40}$/.test(recipientAddress))
+                  ) && disabledReason && (
+                    <p className="text-center text-xs text-white/50 mt-2">{disabledReason}</p>
+                  )}
 
                   {!isConnected && (
                     <p className="text-center text-white/50 text-sm mt-4">

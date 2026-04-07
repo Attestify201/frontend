@@ -763,7 +763,7 @@ export default function DepositPage() {
                       }`}
                     >
                       <Coins className="w-4 h-4" />
-                      USDm
+                      Token
                     </button>
                   </div>
 
@@ -801,17 +801,7 @@ export default function DepositPage() {
                             USDm
                           </button>
                         </div>
-                        {resolvedVault && (
-                          <p className="mt-2 text-xs text-white/50">
-                            Vault (proxy):{' '}
-                            <span className="text-white">
-                              {resolvedVault.slice(0, 6)}…{resolvedVault.slice(-4)}
-                            </span>
-                          </p>
-                        )}
-                        <p className="mt-1 text-xs text-white/40">
-                          Decimals: {selectedTokenDecimals} — approvals and deposits will use this.
-                        </p>
+                        {/* Hide contract/vault metadata in production UI */}
                       </div>
 
                       {/* Amount Input */}
