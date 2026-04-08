@@ -14,6 +14,8 @@ export async function generateMetadata(): Promise<Metadata> {
     description:
       "",
     other: {
+      "talentapp:project_verification":
+        "82aceb94c3565ce00395cff9b9c53cc78916a6d87103e32241e10e3fdf33b39048778ab92724c97f2bcc6c4e179023a9e46dcdbf3e883346a1e4064efeecde14",
       "fc:frame": JSON.stringify({
         version: "next",
         imageUrl: process.env.NEXT_PUBLIC_APP_HERO_IMAGE,
